@@ -1,0 +1,462 @@
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, Key, XCircle, AlertTriangle, Shield, Bell } from 'lucide-react';
+
+export default function ClientSettings() {
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showUsernameForm, setShowUsernameForm] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState('JohnDoe123');
+  const [currentEmail, setCurrentEmail] = useState('john.doe@example.com');
+  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+
+  const handlePasswordChange = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Handle password change logic here
+    console.log('Password change:', { password, newPassword });
+    setShowPasswordForm(false);
+    setPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
+  const handleUsernameChange = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Handle username change logic here
+    console.log('Username change:', username);
+    setShowUsernameForm(false);
+    setUsername('');
+  };
+
+  const handleEmailChange = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Handle email change logic here
+    console.log('Email change:', email);
+    setShowEmailForm(false);
+    setEmail('');
+  };
+
+  const handleAccountDelete = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Handle account deletion logic here
+    console.log('Account deletion confirmed');
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-8">
+      {/* Back Button */}
+      <Link
+        to="/dashboard/client"
+        className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 group"
+      >
+        <ArrowLeft className="h-5 w-5 transform group-hover:-translate-x-1 transition-transform" />
+        <span>Back to Dashboard</span>
+      </Link>
+
+      {/* Header */}
+      <div className="bg-white rounded-xl shadow-sm p-8 mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">Account Settings</h1>
+        <p className="text-gray-600 mt-1">
+          Manage your account settings and preferences
+        </p>
+      </div>
+
+      {/* Account Information */}
+      <div className="bg-white rounded-xl shadow-sm p-8 mb-8">
+        <h2 className="text-lg font-bold text-gray-900 mb-6">Account Details</h2>
+        
+        <div className="space-y-6">
+          {/* Client Number */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div>
+              <h3 className="font-medium text-gray-900">DK Client Number</h3>
+              <p className="text-gray-600">Your unique client identification number</p>
+            </div>
+            <div className="bg-pink-100 px-4 py-2 rounded-lg">
+              <span className="font-medium text-pink-600">DK-12345</span>
+            </div>
+          </div>
+          
+          {/* Username */}
+          <div className="border-t pt-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-medium text-gray-900">Username</h3>
+                <div className="flex flex-col">
+                  <p className="text-gray-600">Current username: <span className="font-medium">{currentUsername}</span></p>
+                  <p className="text-gray-500 text-sm">Change your username</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowUsernameForm(true)}
+                className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
+              >
+                Change Username
+              </button>
+            </div>
+
+            {showUsernameForm && (
+              <form onSubmit={handleUsernameChange} className="mt-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    New Username
+                  </label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div className="flex justify-end gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowUsernameForm(false)}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-900"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
+                  >
+                    Update Username
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
+          {/* Email */}
+          <div className="border-t pt-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-medium text-gray-900">Email Address</h3>
+                <div className="flex flex-col">
+                  <p className="text-gray-600">Current email: <span className="font-medium">{currentEmail}</span></p>
+                  <p className="text-gray-500 text-sm">Change your email address</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEmailForm(true)}
+                className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
+              >
+                Change Email
+              </button>
+            </div>
+
+            {showEmailForm && (
+              <form onSubmit={handleEmailChange} className="mt-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    New Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div className="flex justify-end gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmailForm(false)}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-900"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
+                  >
+                    Update Email
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
+          {/* Change Password */}
+          <div className="border-t pt-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-medium text-gray-900">Password</h3>
+                <p className="text-gray-600">Change your account password</p>
+              </div>
+              <button
+                onClick={() => setShowPasswordForm(true)}
+                className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
+              >
+                <Key className="h-5 w-5" />
+                <span>Change Password</span>
+              </button>
+            </div>
+
+            {showPasswordForm && (
+              <form onSubmit={handlePasswordChange} className="mt-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Current Password
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    New Password
+                  </label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Confirm New Password
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div className="flex justify-end gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordForm(false)}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-900"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
+                  >
+                    Update Password
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Notification Settings */}
+      <div className="bg-white rounded-xl shadow-sm p-8 mb-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="bg-pink-100 p-2 rounded-lg">
+            <Bell className="h-6 w-6 text-pink-500" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Notification Settings</h2>
+            <p className="text-gray-600">Control what notifications you receive</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {/* Email Notifications */}
+          <div>
+            <h3 className="font-medium text-gray-900 mb-4">Email Notifications</h3>
+            <div className="space-y-4">
+              <label className="flex items-center justify-between">
+                <span className="text-gray-700">Booking confirmations</span>
+                <input
+                  type="checkbox"
+                  defaultChecked
+                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                />
+              </label>
+              <label className="flex items-center justify-between">
+                <span className="text-gray-700">Booking reminders</span>
+                <input
+                  type="checkbox"
+                  defaultChecked
+                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                />
+              </label>
+              <label className="flex items-center justify-between">
+                <span className="text-gray-700">Review replies</span>
+                <input
+                  type="checkbox"
+                  defaultChecked
+                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                />
+              </label>
+              <label className="flex items-center justify-between">
+                <span className="text-gray-700">Gift replies</span>
+                <input
+                  type="checkbox"
+                  defaultChecked
+                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                />
+              </label>
+              <label className="flex items-center justify-between">
+                <span className="text-gray-700">Marketing emails</span>
+                <input
+                  type="checkbox"
+                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Push Notifications */}
+          <div className="border-t pt-6">
+            <h3 className="font-medium text-gray-900 mb-4">Push Notifications</h3>
+            <div className="space-y-4">
+              <label className="flex items-center justify-between">
+                <span className="text-gray-700">New messages</span>
+                <input
+                  type="checkbox"
+                  defaultChecked
+                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                />
+              </label>
+              <label className="flex items-center justify-between">
+                <span className="text-gray-700">Booking updates</span>
+                <input
+                  type="checkbox"
+                  defaultChecked
+                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                />
+              </label>
+              <label className="flex items-center justify-between">
+                <span className="text-gray-700">Review replies</span>
+                <input
+                  type="checkbox"
+                  defaultChecked
+                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                />
+              </label>
+              <label className="flex items-center justify-between">
+                <span className="text-gray-700">New fan posts from favorites</span>
+                <input
+                  type="checkbox"
+                  defaultChecked
+                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Close Account Section */}
+      <div className="bg-white rounded-xl shadow-sm p-8">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="bg-pink-100 p-2 rounded-lg">
+            <XCircle className="h-6 w-6 text-pink-500" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Close Account</h2>
+            <p className="text-gray-600">This action cannot be undone</p>
+          </div>
+        </div>
+        
+        <div className="bg-gray-50 rounded-lg p-6 mb-6">
+          <h3 className="font-medium text-gray-900 mb-4">Before you go...</h3>
+          <ul className="space-y-3 text-gray-600">
+            <li className="flex items-start gap-2">
+              <span className="text-red-500 mt-1">•</span>
+              All your profile data will be permanently deleted
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-red-500 mt-1">•</span>
+              Your reviews will be anonymized
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-red-500 mt-1">•</span>
+              Your remaining DK Credits will be lost
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-red-500 mt-1">•</span>
+              All your bookings will be cancelled
+            </li>
+          </ul>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="px-6 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
+          >
+            <XCircle className="h-5 w-5" />
+            <span>Close Account</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Delete Account Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-8 max-w-md w-full">
+            <div className="flex items-center gap-3 text-red-500 mb-4">
+              <AlertTriangle className="h-6 w-6" />
+              <h3 className="text-lg font-bold">Close Account</h3>
+            </div>
+            
+            <div className="bg-red-50 rounded-lg p-4 mb-6">
+              <p className="text-gray-700">
+                For security reasons, please type <span className="font-mono font-bold">DELETE</span> below to confirm that you want to permanently close your account.
+              </p>
+            </div>
+
+            <form onSubmit={handleAccountDelete} className="space-y-4">
+              <input
+                type="text"
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                placeholder='Type "DELETE" to confirm'
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-center font-mono"
+                required
+              />
+              
+              <div className="flex justify-end gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    setDeleteConfirmation('');
+                  }}
+                  className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={deleteConfirmation !== 'DELETE'}
+                  className={`px-6 py-2 rounded-lg ${
+                    deleteConfirmation === 'DELETE'
+                      ? 'bg-pink-500 text-white hover:bg-pink-600'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  Close Account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

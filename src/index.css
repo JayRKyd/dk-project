@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50;
+}
+
+/* Custom styles for the pink theme */
+.text-pink-500 {
+  color: #E91E63;
+}
+
+.bg-pink-500 {
+  background-color: #E91E63;
+}
+
+.hover\:text-pink-200:hover {
+  color: #FCE4EC;
+}
+
+.hover\:bg-pink-600:hover {
+  background-color: #D81B60;
+}
+
+.focus\:ring-pink-500:focus {
+  --tw-ring-color: #E91E63;
+}
+
+.border-pink-300 {
+  border-color: #F48FB1;
+}
