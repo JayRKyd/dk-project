@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Users, 
@@ -17,44 +17,111 @@ import {
   ArrowUp,
   Coins,
   ArrowRight,
-  Shield
+  Shield,
+  Loader
 } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import { 
+  clientDashboardService, 
+  ClientStats, 
+  ClientActivity, 
+  Booking 
+} from '../../services/clientDashboardService';
 
 interface DashboardState {
   membershipTier: 'FREE' | 'PRO' | 'PRO-PLUS' | 'ULTRA';
 }
 
 export default function ClientDashboard() {
-  const stats = {
-    reviews: 12,
-    gifts: 8,
-    bookings: 15,
-    fanPosts: 25
+  const { user } = useAuth();
+  const [stats, setStats] = useState<ClientStats | null>(null);
+  const [recentActivities, setRecentActivities] = useState<ClientActivity[]>([]);
+  const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const loadDashboardData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Load all dashboard data in parallel
+        const [statsData, activitiesData, bookingsData] = await Promise.all([
+          clientDashboardService.getClientStats(user.id),
+          clientDashboardService.getRecentActivity(user.id, 5),
+          clientDashboardService.getUpcomingBookings(user.id, 3)
+        ]);
+
+        setStats(statsData);
+        setRecentActivities(activitiesData);
+        setUpcomingBookings(bookingsData);
+      } catch (err) {
+        console.error('Error loading dashboard data:', err);
+        setError('Failed to load dashboard data. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, [user?.id]);
+
+  const formatRelativeTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    
+    if (diffInDays === 0) return 'Today';
+    if (diffInDays === 1) return 'Yesterday';
+    if (diffInDays < 7) return `${diffInDays} days ago`;
+    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} week${Math.floor(diffInDays / 7) > 1 ? 's' : ''} ago`;
+    return date.toLocaleDateString();
   };
 
-  const recentActivities = [
-    { type: 'review', lady: 'Alexandra', time: '2 days ago' },
-    { type: 'gift', lady: 'Melissa', time: '3 days ago' },
-    { type: 'booking', lady: 'Jenny', time: '1 week ago' },
-    { type: 'fanPost', lady: 'Sophia', time: '1 week ago' },
-  ];
+  const formatBookingDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+    return date.toLocaleDateString();
+  };
 
-  const upcomingBookings = [
-    { 
-      lady: 'Alexandra',
-      time: '14:00 - 15:00',
-      date: 'Tomorrow',
-      service: '1 hour',
-      price: '€130'
-    },
-    {
-      lady: 'Melissa',
-      time: '18:00 - 19:00',
-      date: 'Next Week',
-      service: '2 hours',
-      price: '€250'
-    }
-  ];
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex items-center justify-center h-96">
+          <div className="flex items-center gap-3">
+            <Loader className="h-8 w-8 animate-spin text-pink-500" />
+            <span className="text-lg text-gray-600">Loading your dashboard...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <h3 className="text-red-800 font-medium mb-2">Error Loading Dashboard</h3>
+          <p className="text-red-600">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-4 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -63,7 +130,7 @@ export default function ClientDashboard() {
         <div className="flex items-center gap-6">
           <div className="relative group">
             <img
-              src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80"
+              src={user?.user_metadata?.avatar_url || "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80"}
               alt="Profile"
               className="w-24 h-24 rounded-full object-cover ring-4 ring-pink-100"
             />
@@ -75,7 +142,9 @@ export default function ClientDashboard() {
             </label>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Welcome back, John!</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Welcome back, {user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'}!
+            </h1>
             <p className="text-gray-600">Here's what's happening with your account.</p>
           </div>
         </div>
@@ -97,7 +166,7 @@ export default function ClientDashboard() {
             <h3 className="text-gray-500 text-sm">Reviews Written</h3>
             <Star className="h-5 w-5 text-yellow-400" />
           </div>
-          <div className="text-2xl font-bold text-gray-900">{stats.reviews}</div>
+          <div className="text-2xl font-bold text-gray-900">{stats?.reviewsWritten || 0}</div>
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm">
@@ -105,7 +174,7 @@ export default function ClientDashboard() {
             <h3 className="text-gray-500 text-sm">Gifts Sent</h3>
             <Gift className="h-5 w-5 text-pink-500" />
           </div>
-          <div className="text-2xl font-bold text-gray-900">{stats.gifts}</div>
+          <div className="text-2xl font-bold text-gray-900">{stats?.giftsGiven || 0}</div>
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm">
@@ -113,7 +182,7 @@ export default function ClientDashboard() {
             <h3 className="text-gray-500 text-sm">Total Bookings</h3>
             <Calendar className="h-5 w-5 text-blue-500" />
           </div>
-          <div className="text-2xl font-bold text-gray-900">{stats.bookings}</div>
+          <div className="text-2xl font-bold text-gray-900">{stats?.totalBookings || 0}</div>
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm">
@@ -121,7 +190,7 @@ export default function ClientDashboard() {
             <h3 className="text-gray-500 text-sm">Fan Posts Unlocked</h3>
             <Camera className="h-5 w-5 text-purple-500" />
           </div>
-          <div className="text-2xl font-bold text-gray-900">{stats.fanPosts}</div>
+          <div className="text-2xl font-bold text-gray-900">{stats?.fanPostsUnlocked || 0}</div>
         </div>
       </div>
 
@@ -141,28 +210,41 @@ export default function ClientDashboard() {
               </Link>
             </div>
             <div className="space-y-4">
-              {upcomingBookings.map((booking, index) => (
-                <div 
-                  key={index}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-pink-50 transition-colors"
-                >
-                  <div className="flex items-center space-x-4">
-                    <div className="bg-pink-100 p-3 rounded-lg">
-                      <Calendar className="h-6 w-6 text-pink-500" />
-                    </div>
-                    <div>
-                      <div className="font-medium text-gray-900">{booking.lady}</div>
-                      <div className="text-sm text-gray-500">
-                        {booking.date} • {booking.time}
+              {upcomingBookings.length > 0 ? (
+                upcomingBookings.map((booking) => (
+                  <div 
+                    key={booking.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-pink-50 transition-colors"
+                  >
+                    <div className="flex items-center space-x-4">
+                      <div className="bg-pink-100 p-3 rounded-lg">
+                        <Calendar className="h-6 w-6 text-pink-500" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">{booking.lady.name}</div>
+                        <div className="text-sm text-gray-500">
+                          {formatBookingDate(booking.date)} • {booking.time}
+                        </div>
                       </div>
                     </div>
+                    <div className="text-right">
+                      <div className="font-medium text-gray-900">{booking.price}</div>
+                      <div className="text-sm text-gray-500">{booking.service}</div>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-medium text-gray-900">{booking.price}</div>
-                    <div className="text-sm text-gray-500">{booking.service}</div>
-                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>No upcoming bookings</p>
+                  <Link 
+                    to="/providers" 
+                    className="text-pink-500 hover:text-pink-600 text-sm font-medium"
+                  >
+                    Book your first appointment
+                  </Link>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
@@ -170,38 +252,36 @@ export default function ClientDashboard() {
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-bold text-gray-900">Recent Activity</h2>
-              <Link 
-                to="/dashboard/client/activity"
-                className="text-pink-500 hover:text-pink-600 text-sm font-medium"
-              >
-                View All
-              </Link>
             </div>
             <div className="space-y-4">
-              {recentActivities.map((activity, index) => (
-                <div 
-                  key={index}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-pink-50 transition-colors"
-                >
-                  <div className="flex items-center space-x-4">
-                    <div className="bg-pink-100 p-3 rounded-lg">
-                      {activity.type === 'review' && <Star className="h-6 w-6 text-pink-500" />}
-                      {activity.type === 'gift' && <Gift className="h-6 w-6 text-pink-500" />}
-                      {activity.type === 'booking' && <Calendar className="h-6 w-6 text-pink-500" />}
-                      {activity.type === 'fanPost' && <Camera className="h-6 w-6 text-pink-500" />}
-                    </div>
-                    <div>
-                      <div className="font-medium text-gray-900">
-                        {activity.type === 'review' && `Reviewed ${activity.lady}`}
-                        {activity.type === 'gift' && `Sent a gift to ${activity.lady}`}
-                        {activity.type === 'booking' && `Booked ${activity.lady}`}
-                        {activity.type === 'fanPost' && `Unlocked ${activity.lady}'s fan post`}
+              {recentActivities.length > 0 ? (
+                recentActivities.map((activity) => (
+                  <div 
+                    key={activity.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-pink-50 transition-colors"
+                  >
+                    <div className="flex items-center space-x-4">
+                      <div className="bg-pink-100 p-3 rounded-lg">
+                        {activity.type === 'review' && <Star className="h-6 w-6 text-pink-500" />}
+                        {activity.type === 'gift' && <Gift className="h-6 w-6 text-pink-500" />}
+                        {activity.type === 'booking' && <Calendar className="h-6 w-6 text-pink-500" />}
+                        {activity.type === 'fanPost' && <Camera className="h-6 w-6 text-pink-500" />}
+                        {activity.type === 'favorite' && <Heart className="h-6 w-6 text-pink-500" />}
                       </div>
-                      <div className="text-sm text-gray-500">{activity.time}</div>
+                      <div>
+                        <div className="font-medium text-gray-900">{activity.description}</div>
+                        <div className="text-sm text-gray-500">{formatRelativeTime(activity.createdAt)}</div>
+                      </div>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <MessageCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>No recent activity</p>
+                  <p className="text-sm">Start exploring to see your activity here</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>
@@ -217,7 +297,7 @@ export default function ClientDashboard() {
             <div className="bg-pink-50 rounded-lg p-4 mb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-600">Available Credits</span>
-                <span className="text-2xl font-bold text-pink-500">170</span>
+                <span className="text-2xl font-bold text-pink-500">{stats?.creditsRemaining || 0}</span>
               </div>
               <div className="text-sm text-gray-500">
                 Use credits to unlock fan posts and send gifts
@@ -281,31 +361,39 @@ export default function ClientDashboard() {
               <Bell className="h-5 w-5 text-gray-400" />
             </div>
             <div className="space-y-4">
-              <div className="flex items-center gap-4 p-3 bg-pink-50 rounded-lg">
-                <div className="bg-pink-100 p-2 rounded-lg">
-                  <Calendar className="h-5 w-5 text-pink-500" />
+              {upcomingBookings.length > 0 && (
+                <div className="flex items-center gap-4 p-3 bg-pink-50 rounded-lg">
+                  <div className="bg-pink-100 p-2 rounded-lg">
+                    <Calendar className="h-5 w-5 text-pink-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Upcoming booking {formatBookingDate(upcomingBookings[0].date).toLowerCase()}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      With {upcomingBookings[0].lady.name} at {upcomingBookings[0].time}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Upcoming booking tomorrow</p>
-                  <p className="text-xs text-gray-500">With Alexandra at 14:00</p>
+              )}
+              {stats && stats.creditsRemaining <= 10 && (
+                <div className="flex items-center gap-4 p-3 bg-yellow-50 rounded-lg">
+                  <div className="bg-yellow-100 p-2 rounded-lg">
+                    <Coins className="h-5 w-5 text-yellow-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Low credits balance</p>
+                    <p className="text-xs text-gray-500">You have {stats.creditsRemaining} credits remaining</p>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg">
                 <div className="bg-blue-100 p-2 rounded-lg">
                   <MessageCircle className="h-5 w-5 text-blue-500" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-900">New message from Melissa</p>
-                  <p className="text-xs text-gray-500">5 minutes ago</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 p-3 bg-yellow-50 rounded-lg">
-                <div className="bg-yellow-100 p-2 rounded-lg">
-                  <Camera className="h-5 w-5 text-yellow-500" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">New fan post from Jenny</p>
-                  <p className="text-xs text-gray-500">1 hour ago</p>
+                  <p className="text-sm font-medium text-gray-900">Welcome to DateKelly!</p>
+                  <p className="text-xs text-gray-500">Your account is ready to use</p>
                 </div>
               </div>
             </div>

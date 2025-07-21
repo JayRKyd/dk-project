@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Phone, MessageCircle, MapPin, X, ChevronLeft, ChevronRight, Star, Eye } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import ReviewCard from '../components/ReviewCard';
+import { profileService, ProfileData } from '../services/profileService';
 
-const images = [
+// Default fallback data in case API fails
+const defaultImages = [
   'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
   'https://images.unsplash.com/photo-1604004555489-723a93d6ce74?auto=format&fit=crop&w=800&q=80',
   'https://images.unsplash.com/photo-1524250502761-1ac6f2e30d43?auto=format&fit=crop&w=800&q=80',
@@ -13,85 +15,62 @@ const images = [
   'https://images.unsplash.com/photo-1622396481328-7d0cd0e7b35d?auto=format&fit=crop&w=800&q=80'
 ];
 
-const services = [
-  { name: 'Service for Men', price: '€50' },
-  { name: 'Service for Ladies', price: '€80' },
-  { name: 'Girlfriend Experience', price: '€100' },
-  { name: 'Striptease', price: '€70' },
-  { name: 'Fingering', price: '€50' },
-  { name: 'Handjob', price: '€50' },
-  { name: 'Kissing', price: '€30' },
-  { name: 'French kissing', price: '€40' },
-  { name: 'Pussy licking', price: '€60' },
-  { name: 'Rimming (rec)', price: '€80' },
-  { name: 'Rimming (client)', price: '€80' },
-  { name: 'Blowjob with condom', price: '€60' },
-  { name: 'Blowjob without condom', price: '€80' },
-  { name: 'Deep Throat', price: '€90' },
-  { name: 'Sex with condom', price: '€100' },
-  { name: 'Sex without condom', price: '€150' },
-  { name: 'Relaxing Massage', price: '€60' },
-  { name: 'Erotic Massage', price: '€80' },
-  { name: 'Anal Massage', price: '€90' },
-  { name: 'Dildo (rec)', price: '€70' },
-  { name: 'Dildo (client)', price: '€70' },
-  { name: 'Trio MFF', price: '€200' },
-  { name: 'Trio MMF', price: '€200' },
-  { name: 'Groupsex', price: '€250' },
-  { name: 'Photos', price: '€100' },
-  { name: 'Video', price: '€150' },
-  { name: 'High Heels', price: '€20' },
-  { name: 'Role Play', price: '€100' },
-  { name: 'Soft SM', price: '€120' },
-  { name: 'BDSM', price: '€150' },
-  { name: 'Golden Shower (rec)', price: '€100' },
-  { name: 'Golden Shower (client)', price: '€100' },
-];
-
-const reviews = [
-  {
-    id: '1',
-    authorName: 'Mike van Delden',
-    serviceName: 'Alexandra',
-    serviceLink: '/ladies/alexandra',
-    date: 'September 2020',
-    rating: 8.0,
-    positives: [
-      'Ordered Alexandra. Communication was good by telephone.',
-      'After 1 hour Alexandra arrived, she is great! What a beauty!'
-    ],
-    negatives: [
-      '30 minutes went too quick! I recommend staying longer if you can afford it!'
-    ],
-    reply: {
-      from: 'Alexandra',
-      message: 'Thank you for the review. I hope to see you again soon! Kiss!'
-    },
-    likes: 10,
-    dislikes: 0
-  },
-  {
-    id: '2',
-    authorName: 'NeverWalkAlone',
-    serviceName: 'Alexandra',
-    serviceLink: '/ladies/alexandra',
-    date: 'August 2020',
-    rating: 9.0,
-    positives: [
-      'Very beautiful girl',
-      'Great service, took her time',
-      'Speaks good English'
-    ],
-    negatives: [],
-    likes: 8,
-    dislikes: 0
-  }
-];
-
 export default function Advertisement() {
+  const { id } = useParams<{ id: string }>();
   const [selectedImage, setSelectedImage] = useState(0);
   const [fullscreenImage, setFullscreenImage] = useState<number | null>(null);
   const [showPhone, setShowPhone] = useState(false);
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch profile data on component mount
+  useEffect(() => {
+    const fetchProfileData = async () => {
+      if (!id) {
+        setError('No profile ID provided');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const data = await profileService.getProfileBySlug(id);
+        
+        if (data) {
+          setProfileData(data);
+        } else {
+          setError('Profile not found');
+        }
+      } catch (err) {
+        setError('Failed to load profile data');
+        console.error('Error fetching profile:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfileData();
+  }, [id]);
+
+  // Use profile data or fallback to defaults
+  const images = profileData?.images?.length ? profileData.images : defaultImages;
+  const services = profileData?.services || [];
+  
+  // Transform reviews to match ReviewCard interface
+  const reviews = profileData?.reviews?.map(review => ({
+    id: review.id,
+    authorName: 'Anonymous',
+    serviceName: profileData?.name || 'Unknown',
+    serviceLink: `/ladies/${id}`,
+    date: review.created_at,
+    rating: review.rating,
+    positives: review.positives || [],
+    negatives: review.negatives || [],
+    reply: undefined,
+    likes: review.likes,
+    dislikes: review.dislikes
+  })) || [];
 
   const openFullscreen = (index: number) => {
     setFullscreenImage(index);
@@ -107,11 +86,53 @@ export default function Advertisement() {
     if (fullscreenImage === null) return;
     
     if (direction === 'prev') {
-      setFullscreenImage(prev => (prev > 0 ? prev - 1 : images.length - 1));
+      setFullscreenImage(prev => prev !== null ? (prev > 0 ? prev - 1 : images.length - 1) : 0);
     } else {
-      setFullscreenImage(prev => (prev < images.length - 1 ? prev + 1 : 0));
+      setFullscreenImage(prev => prev !== null ? (prev < images.length - 1 ? prev + 1 : 0) : 0);
     }
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-pink-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-red-600 mb-4">Error</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Link to="/ladies" className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600">
+            Back to Ladies
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Show not found state
+  if (!profileData) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-600 mb-4">Profile Not Found</h2>
+          <p className="text-gray-600 mb-4">The profile you're looking for doesn't exist.</p>
+          <Link to="/ladies" className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600">
+            Back to Ladies
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -148,10 +169,12 @@ export default function Advertisement() {
 
         {/* Profile Info - Centered at bottom */}
         <div className="absolute bottom-0 left-[calc(16.666667%+1rem)] z-10 flex items-center gap-3 bg-gradient-to-t from-black/60 to-transparent w-full py-6">
-          <span className="bg-pink-500 text-white px-6 py-2 rounded-full text-2xl font-bold shadow-lg">Alexandra</span>
-          <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">9.5 ★</span>
-          <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">2,258 ❤</span>
-          <span className="bg-green-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">Verified! ✓</span>
+          <span className="bg-pink-500 text-white px-6 py-2 rounded-full text-2xl font-bold shadow-lg">{profileData.name}</span>
+          <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">{profileData.rating} ★</span>
+          <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">{profileData.loves} ❤</span>
+          {profileData.is_verified && (
+            <span className="bg-green-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">Verified! ✓</span>
+          )}
         </div>
 
         {/* Fullscreen Photo Viewer */}
@@ -211,8 +234,7 @@ export default function Advertisement() {
             <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
               <h2 className="text-2xl font-bold mb-4">About me</h2>
               <div className="space-y-4 text-gray-700">
-                <p>Hi, I'm Alexandra! I'm so glad you're checking out my page. I enjoy going out and having fun, and I'm always looking for exciting partners to share some great moments with. I'm available every day and would love to meet you – feel free to give me a call and set something up. I'm looking forward to it! 😊</p>
-                <p>See you soon!</p>
+                <p>{profileData.description}</p>
               </div>
             </div>
 
@@ -228,34 +250,34 @@ export default function Advertisement() {
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Age</h3>
-                    <p className="font-bold">22</p>
+                    <p className="font-bold">{profileData.details.age}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Length</h3>
-                    <p className="font-bold">170 cm</p>
+                    <p className="font-bold">{profileData.details.height} cm</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Cup size</h3>
-                    <p className="font-bold">B</p>
+                    <p className="font-bold">{profileData.details.cup_size}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Weight</h3>
-                    <p className="font-bold">50 kg</p>
+                    <p className="font-bold">{profileData.details.weight} kg</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Body size</h3>
-                    <p className="font-bold">Slim</p>
+                    <p className="font-bold">{profileData.details.body_type}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Descent</h3>
-                    <p className="font-bold">Bulgarian</p>
+                    <p className="font-bold">{profileData.details.ethnicity}</p>
                   </div>
                   <div className="flex items-start justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Language</h3>
                     <div className="flex gap-2">
-                      <p className="font-bold">English</p>
-                      <p className="font-bold">Bulgarian</p>
-                      <p className="font-bold">Italian</p>
+                      {profileData.details.languages.map((lang, index) => (
+                        <p key={index} className="font-bold">{lang}</p>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -265,30 +287,12 @@ export default function Advertisement() {
               <div className="bg-pink-100 p-6 rounded-lg">
                 <h2 className="text-xl font-bold mb-4">Prices</h2>
                 <div className="grid gap-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">15 min</h3>
-                    <p className="font-bold">€ 50,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">30 min</h3>
-                    <p className="font-bold">€ 100,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">1 hour</h3>
-                    <p className="font-bold">€ 130,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">2 hours</h3>
-                    <p className="font-bold">€ 250,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">Night</h3>
-                    <p className="font-bold">€ 600,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">Escort extra</h3>
-                    <p className="font-bold">€ 50,-</p>
-                  </div>
+                  {profileData.rates.map((rate, index) => (
+                    <div key={index} className="flex items-center justify-between">
+                      <h3 className="font-medium text-gray-600 w-28">{rate.duration}</h3>
+                      <p className="font-bold">€ {rate.price},-</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -297,122 +301,34 @@ export default function Advertisement() {
             <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
               <h2 className="text-xl font-bold mb-4">Service</h2>
               <div className="grid grid-cols-2 gap-x-12 gap-y-4">
-                <div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Girlfriend Experience</span>
-                    <span className="text-gray-700">Included</span>
+                {services.length > 0 ? (
+                  <>
+                    <div>
+                      {services.slice(0, Math.ceil(services.length / 2)).map((service, index) => (
+                        <div key={service.id} className="flex justify-between items-center">
+                          <span className="text-pink-500">{service.service_name}</span>
+                          <span className="text-gray-700">
+                            {service.is_available ? 'Available' : 'Not Available'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      {services.slice(Math.ceil(services.length / 2)).map((service, index) => (
+                        <div key={service.id} className="flex justify-between items-center">
+                          <span className="text-pink-500">{service.service_name}</span>
+                          <span className="text-gray-700">
+                            {service.is_available ? 'Available' : 'Not Available'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="col-span-2 text-center text-gray-500 py-8">
+                    No services available
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Striptease</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Fingering</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Handjob</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Kissing</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">French kissing</span>
-                    <span className="text-gray-700">€ 20,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Pussy licking</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Rimming (me)</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Rimming (client)</span>
-                    <span className="text-gray-700">€ 20,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Blowjob with condom</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Blowjob without condom</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Deep Throat</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Sex with condom</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Sex without condom</span>
-                    <span className="text-gray-700">€ 50,-</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Relaxing Massage</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Erotic Massage</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Anal Massage</span>
-                    <span className="text-gray-700">€ 30,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Dildo (me)</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Dildo (client)</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Trio MFF</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Trio MMF</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Groupsex</span>
-                    <span className="text-gray-700">€ 50,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Photo's</span>
-                    <span className="text-gray-700">€ 50,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Video</span>
-                    <span className="text-gray-700">€ 100,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">High Heels</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Role Play</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Soft SM</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">BDSM</span>
-                    <span className="text-gray-700">€ 50,-</span>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -445,8 +361,7 @@ export default function Advertisement() {
                 <div className="flex items-start space-x-2">
                   <MapPin className="h-5 w-5 text-pink-500 mt-1" />
                   <div>
-                    <p className="font-medium">Amsterdam</p>
-                    <p className="text-gray-600">Keizersgracht</p>
+                    <p className="font-medium">{profileData.location}</p>
                   </div>
                 </div>
               </div>
@@ -496,13 +411,13 @@ export default function Advertisement() {
               <div className="bg-pink-100 p-6 rounded-lg">
                 <h2 className="text-xl font-bold mb-3">Opening Hours</h2>
                 <div className="grid grid-cols-2 gap-2 text-gray-700">
-                  <div>Monday</div><div>Closed</div>
-                  <div>Tuesday</div><div>Closed</div>
-                  <div>Wednesday</div><div>09:00 - 22:00</div>
-                  <div>Thursday</div><div>09:00 - 22:00</div>
-                  <div>Friday</div><div>09:00 - 24:00</div>
-                  <div>Saturday</div><div>09:00 - 24:00</div>
-                  <div>Sunday</div><div>09:00 - 24:00</div>
+                  <div>Monday</div><div>{profileData.opening_hours.monday}</div>
+                  <div>Tuesday</div><div>{profileData.opening_hours.tuesday}</div>
+                  <div>Wednesday</div><div>{profileData.opening_hours.wednesday}</div>
+                  <div>Thursday</div><div>{profileData.opening_hours.thursday}</div>
+                  <div>Friday</div><div>{profileData.opening_hours.friday}</div>
+                  <div>Saturday</div><div>{profileData.opening_hours.saturday}</div>
+                  <div>Sunday</div><div>{profileData.opening_hours.sunday}</div>
                 </div>
               </div>
 
@@ -512,15 +427,25 @@ export default function Advertisement() {
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Member since</span>
-                    <span className="font-medium">05/Dec/2020</span>
+                    <span className="font-medium">{new Date(profileData.member_since).toLocaleDateString('en-US', { 
+                      year: 'numeric', 
+                      month: 'short', 
+                      day: 'numeric' 
+                    })}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Views on profile</span>
-                    <span className="font-medium">23.548</span>
+                    <span className="font-medium">{profileData.views.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Last time online</span>
-                    <span className="font-medium">12/Apr/2021</span>
+                    <span className="font-medium">{new Date(profileData.last_online).toLocaleDateString('en-US', { 
+                      year: 'numeric', 
+                      month: 'short', 
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}</span>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-4">

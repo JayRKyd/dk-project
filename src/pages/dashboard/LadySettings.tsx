@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   User, 
   Camera, 
   MapPin, 
   Clock, 
   DollarSign,
-  ArrowLeft
+  ArrowLeft,
+  Loader,
+  AlertCircle,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
+
+import { useUserProfile } from '../../hooks/useUserProfile';
+import { supabase } from '../../lib/supabase';
+import { uploadImage, uploadMultipleImages } from '../../services/imageService';
 
 interface FormData {
   // Profile
@@ -157,18 +165,286 @@ const tabs = [
 type TabId = typeof tabs[number]['id'];
 
 export default function LadySettings() {
+  const navigate = useNavigate();
+  const { profile, loading: profileLoading, updateProfile } = useUserProfile();
   const [activeTab, setActiveTab] = useState<TabId>('profile');
   const [formData, setFormData] = useState<FormData>(initialFormData);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [galleryImages, setGalleryImages] = useState<string[]>([]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoMessage, setPhotoMessage] = useState<{text: string; type: 'success' | 'error' | 'info' | null}>({text: '', type: null});
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Redirect if not a lady
+  useEffect(() => {
+    if (profile && profile.role !== 'lady') {
+      navigate('/dashboard');
+    }
+  }, [profile, navigate]);
+
+  // Load gallery images
+  useEffect(() => {
+    const fetchGalleryImages = async () => {
+      if (!profile) return;
+      
+      try {
+        // Fetch gallery images from storage
+        const { data, error } = await supabase.storage
+          .from('gallery-images')
+          .list(profile.id, {
+            sortBy: { column: 'name', order: 'asc' }
+          });
+
+        if (error) throw error;
+
+        // Get public URLs for all images
+        if (data && data.length > 0) {
+          const imageUrls = data.map(file => {
+            const { data: urlData } = supabase.storage
+              .from('gallery-images')
+              .getPublicUrl(`${profile.id}/${file.name}`);
+            return urlData.publicUrl;
+          });
+
+          setGalleryImages(imageUrls);
+        }
+      } catch (error) {
+        console.error('Error fetching gallery images:', error);
+      }
+    };
+
+    fetchGalleryImages();
+  }, [profile]);
+
+  // Load profile data when component mounts
+  useEffect(() => {
+    const loadProfileData = async () => {
+      if (!profile || profileLoading) return;
+
+      try {
+        // Load basic profile data
+        const updatedFormData = {
+          ...formData,
+          displayName: profile.name || '',
+          bio: profile.description || '',
+        };
+
+        // Load lady details if available
+        const { data: profileDetails, error: detailsError } = await supabase
+          .from('profile_details')
+          .select('*')
+          .eq('profile_id', profile.id)
+          .single();
+
+        if (!detailsError && profileDetails) {
+          Object.assign(updatedFormData, {
+            category: profileDetails.category || 'Ladies',
+            age: profileDetails.age?.toString() || '',
+            height: profileDetails.height?.toString() || '',
+            weight: profileDetails.weight?.toString() || '',
+            cupSize: profileDetails.cup_size || '',
+            bodyType: profileDetails.body_type || '',
+            ethnicity: profileDetails.ethnicity || '',
+            languages: profileDetails.languages || [],
+          });
+        }
+
+        // Load location data
+        if (profile.location) {
+          const [city = '', area = ''] = profile.location.split(',').map(s => s.trim());
+          Object.assign(updatedFormData, { city, area });
+        }
+
+        // Load services
+        const { data: services, error: servicesError } = await supabase
+          .from('lady_services')
+          .select('service_name, is_available')
+          .eq('profile_id', profile.id);
+
+        if (!servicesError && services && services.length > 0) {
+          const servicesMap = services.reduce((acc, service) => {
+            acc[service.service_name] = service.is_available;
+            return acc;
+          }, {} as Record<string, boolean>);
+
+          Object.assign(updatedFormData, {
+            services: { ...updatedFormData.services, ...servicesMap }
+          });
+        }
+
+        // Load rates
+        const { data: rates, error: ratesError } = await supabase
+          .from('lady_rates')
+          .select('duration, price')
+          .eq('profile_id', profile.id);
+
+        if (!ratesError && rates && rates.length > 0) {
+          const ratesMap = rates.reduce((acc, rate) => {
+            acc[rate.duration] = rate.price?.toString() || '';
+            return acc;
+          }, {} as Record<string, string>);
+
+          Object.assign(updatedFormData, {
+            rates: { ...updatedFormData.rates, ...ratesMap }
+          });
+        }
+
+        // Load availability
+        const { data: availability, error: availabilityError } = await supabase
+          .from('lady_availability')
+          .select('day_of_week, is_working, start_time, end_time')
+          .eq('profile_id', profile.id);
+
+        if (!availabilityError && availability && availability.length > 0) {
+          const workingDays = { ...updatedFormData.workingDays };
+          const workingHours = { ...updatedFormData.workingHours };
+
+          availability.forEach(day => {
+            const dayName = day.day_of_week.toLowerCase();
+            workingDays[dayName] = day.is_working;
+            
+            if (day.is_working) {
+              workingHours[dayName] = {
+                start: day.start_time || '09:00',
+                end: day.end_time || '22:00'
+              };
+            }
+          });
+
+          Object.assign(updatedFormData, { workingDays, workingHours });
+        }
+
+        setFormData(updatedFormData);
+      } catch (error) {
+        console.error('Error loading profile data:', error);
+      }
+    };
+
+    loadProfileData();
+  }, [profile, profileLoading]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Settings updated:', formData);
+    
+    if (!profile) return;
+    
+    try {
+      setSaving(true);
+      setSaveSuccess(false);
+      setSaveError(null);
+      
+      // Update basic profile information
+      await updateProfile({
+        name: formData.displayName,
+        description: formData.bio,
+        location: `${formData.city}, ${formData.area}`,
+      });
+
+      // Update or create profile details
+      const { error: detailsError } = await supabase
+        .from('profile_details')
+        .upsert({
+          profile_id: profile.id,
+          category: formData.category,
+          age: parseInt(formData.age) || null,
+          height: parseInt(formData.height) || null,
+          weight: parseInt(formData.weight) || null,
+          cup_size: formData.cupSize,
+          body_type: formData.bodyType,
+          ethnicity: formData.ethnicity,
+          languages: formData.languages,
+          updated_at: new Date().toISOString()
+        });
+
+      if (detailsError) throw detailsError;
+
+      // Update services - first delete existing services
+      await supabase
+        .from('lady_services')
+        .delete()
+        .eq('profile_id', profile.id);
+
+      // Then insert new services
+      const servicesToInsert = Object.entries(formData.services).map(([service_name, is_available]) => ({
+        profile_id: profile.id,
+        service_name,
+        is_available: !!is_available,
+      }));
+
+      if (servicesToInsert.length > 0) {
+        const { error: servicesError } = await supabase
+          .from('lady_services')
+          .insert(servicesToInsert);
+
+        if (servicesError) throw servicesError;
+      }
+
+      // Update rates - first delete existing rates
+      await supabase
+        .from('lady_rates')
+        .delete()
+        .eq('profile_id', profile.id);
+
+      // Then insert new rates
+      const ratesToInsert = Object.entries(formData.rates)
+        .filter(([_, price]) => price && price.trim() !== '')
+        .map(([duration, price]) => ({
+          profile_id: profile.id,
+          duration,
+          price: parseFloat(price) || 0,
+        }));
+
+      if (ratesToInsert.length > 0) {
+        const { error: ratesError } = await supabase
+          .from('lady_rates')
+          .insert(ratesToInsert);
+
+        if (ratesError) throw ratesError;
+      }
+
+      // Update availability - first delete existing availability
+      await supabase
+        .from('lady_availability')
+        .delete()
+        .eq('profile_id', profile.id);
+
+      // Then insert new availability
+      const availabilityToInsert = Object.entries(formData.workingDays)
+        .map(([day_of_week, is_working]) => ({
+          profile_id: profile.id,
+          day_of_week,
+          is_working: !!is_working,
+          start_time: is_working ? formData.workingHours[day_of_week]?.start || '09:00' : null,
+          end_time: is_working ? formData.workingHours[day_of_week]?.end || '22:00' : null,
+        }));
+
+      if (availabilityToInsert.length > 0) {
+        const { error: availabilityError } = await supabase
+          .from('lady_availability')
+          .insert(availabilityToInsert);
+
+        if (availabilityError) throw availabilityError;
+      }
+
+      setSaveSuccess(true);
+      
+      // Reset success message after 3 seconds
+      setTimeout(() => {
+        setSaveSuccess(false);
+      }, 3000);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      setSaveError('Failed to save settings. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const updateFormData = (path: string[], value: any) => {
     setFormData(prev => {
       const newData = { ...prev };
-      let current = newData;
+      let current: any = newData;
       for (let i = 0; i < path.length - 1; i++) {
         current = current[path[i]];
       }
@@ -177,15 +453,22 @@ export default function LadySettings() {
     });
   };
 
+  // Show loading state while profile is loading
+  if (profileLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader className="h-8 w-8 text-pink-500 animate-spin" />
+        <span className="ml-2 text-lg">Loading settings...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Back Button */}
-      <Link
-        to="/dashboard/lady"
-        className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 group"
-      >
-        <ArrowLeft className="h-5 w-5 transform group-hover:-translate-x-1 transition-transform" />
-        <span>Back to Dashboard</span>
+      {/* Back to Dashboard Link */}
+      <Link to="/dashboard" className="inline-flex items-center text-gray-600 hover:text-pink-500 mb-6">
+        <ArrowLeft className="h-4 w-4 mr-1" />
+        Back to Dashboard
       </Link>
 
       <div className="flex flex-col md:flex-row gap-8">
@@ -409,26 +692,249 @@ export default function LadySettings() {
             {activeTab === 'photos' && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">Photos</h2>
+                
+                {/* Success/Error Messages */}
+                {photoMessage.text && (
+                  <div className={`mb-4 p-4 rounded-lg flex items-center ${
+                    photoMessage.type === 'success' ? 'bg-green-100 text-green-700 border-l-4 border-green-500' :
+                    photoMessage.type === 'error' ? 'bg-red-100 text-red-700 border-l-4 border-red-500' :
+                    'bg-blue-100 text-blue-700 border-l-4 border-blue-500'
+                  }`}>
+                    {photoMessage.type === 'success' && <CheckCircle className="h-5 w-5 mr-2" />}
+                    {photoMessage.type === 'error' && <AlertCircle className="h-5 w-5 mr-2" />}
+                    {photoMessage.type === 'info' && <Loader className="h-5 w-5 mr-2 animate-spin" />}
+                    <p>{photoMessage.text}</p>
+                  </div>
+                )}
+                
                 {/* Photo Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  {Array.from({ length: 7 }).map((_, index) => (
-                    <div
-                      key={index}
-                      className="aspect-square bg-gray-100 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors"
-                    >
-                      {index === 0 ? (
-                        <div className="text-center">
-                          <Camera className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                          <span className="text-sm text-gray-500">Main Photo</span>
+                <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-6">
+                  {isUploadingPhoto && (
+                    <div className="absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center z-10">
+                      <div className="flex flex-col items-center">
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-pink-500 mb-2"></div>
+                        <span className="text-sm text-gray-700">Uploading photo...</span>
+                      </div>
+                    </div>
+                  )}
+                  {/* Main Photo Upload */}
+                  <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden relative group">
+                    {profile?.image_url ? (
+                      <>
+                        <img 
+                          src={`${profile.image_url}?t=${Date.now()}`} 
+                          alt="Profile" 
+                          className="w-full h-full object-cover profile-main-img"
+                        />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <div className="absolute inset-0 bg-black bg-opacity-30 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                          <span className="text-white font-medium z-10 mb-2 opacity-0 group-hover:opacity-100 transition-opacity">Main Photo</span>
+                          <label className="cursor-pointer p-2 bg-pink-500 rounded-full z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Camera className="h-6 w-6 text-white" />
+                            <input 
+                              type="file" 
+                              className="hidden" 
+                              accept="image/jpeg,image/png,image/webp"
+                              onChange={async (e) => {
+                                // Prevent form submission
+                                e.preventDefault();
+                                e.stopPropagation();
+                                
+                                if (!profile || !e.target.files || e.target.files.length === 0) return;
+                                
+                                try {
+                                  setIsUploadingPhoto(true);
+                                  setPhotoMessage({text: 'Uploading main photo...', type: 'info'});
+                                  
+                                  const file = e.target.files[0];
+                                  
+                                  // Upload to Supabase
+                                  const { url } = await uploadImage(file, 'profile-pictures', '', profile.id);
+                                  
+                                  // Clear the file input
+                                  e.target.value = '';
+                                  
+                                  // Update profile with new image URL
+                                  await updateProfile({ 
+                                    image_url: url
+                                  });
+                                  
+                                  // Force re-render by adding a timestamp to the image URL
+                                  const imgElement = document.querySelector('.profile-main-img') as HTMLImageElement;
+                                  if (imgElement) {
+                                    imgElement.src = `${url}?t=${Date.now()}`;
+                                  }
+                                  
+                                  setPhotoMessage({text: 'Main photo updated successfully!', type: 'success'});
+                                  setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                                } catch (error) {
+                                  console.error('Error uploading main photo:', error);
+                                  setPhotoMessage({
+                                    text: error instanceof Error ? error.message : 'Failed to upload photo',
+                                    type: 'error'
+                                  });
+                                  setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                                } finally {
+                                  setIsUploadingPhoto(false);
+                                }
+                              }}
+                            />
+                          </label>
                         </div>
-                      ) : (
-                        <div className="text-center">
-                          <Camera className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                          <span className="text-sm text-gray-500">Add Photo</span>
-                        </div>
-                      )}
+                      </>
+                    ) : (
+                      <label className="cursor-pointer flex flex-col items-center justify-center h-full hover:bg-gray-200 transition-colors">
+                        <Camera className="h-12 w-12 text-gray-400 mb-3" />
+                        <span className="text-base font-medium text-gray-700">Main Photo</span>
+                        <span className="text-xs text-gray-500 mt-1">Click to upload</span>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={async (e) => {
+                            if (!profile || !e.target.files || e.target.files.length === 0) return;
+                            
+                            try {
+                              setIsUploadingPhoto(true);
+                              setPhotoMessage({text: 'Uploading main photo...', type: 'info'});
+                              
+                              const file = e.target.files[0];
+                              const { url } = await uploadImage(file, 'profile-pictures', '', profile.id);
+                              
+                              // Update profile with new image URL
+                              await updateProfile({ image_url: url });
+                              
+                              setPhotoMessage({text: 'Main photo updated successfully!', type: 'success'});
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                            } catch (error) {
+                              console.error('Error uploading main photo:', error);
+                              setPhotoMessage({
+                                text: error instanceof Error ? error.message : 'Failed to upload photo',
+                                type: 'error'
+                              });
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                            } finally {
+                              setIsUploadingPhoto(false);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                  
+                  {/* Gallery Photos */}
+                  {galleryImages.map((imageUrl, index) => (
+                    <div key={`gallery-${index}`} className="aspect-square bg-gray-100 rounded-lg overflow-hidden relative group">
+                      <img 
+                        src={imageUrl.includes('?t=') ? imageUrl : `${imageUrl}?t=${Date.now()}`} 
+                        alt={`Gallery ${index + 1}`} 
+                        className="w-full h-full object-cover gallery-img"
+                        data-index={index}
+                      />
+                      <div className="absolute inset-0 bg-black bg-opacity-40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <button 
+                          type="button"
+                          className="p-2 bg-red-500 bg-opacity-80 rounded-full"
+                          onClick={async (e) => {
+                            // Prevent form submission
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            if (!profile) return;
+                            
+                            try {
+                              setPhotoMessage({text: 'Deleting photo...', type: 'info'});
+                              
+                              // Get the base URL without cache-busting parameters
+                              const baseUrl = imageUrl.split('?')[0];
+                              
+                              // Extract filename from URL
+                              const filename = baseUrl.split('/').pop();
+                              if (!filename) throw new Error('Invalid image URL');
+                              
+                              // Delete from storage
+                              const { error } = await supabase.storage
+                                .from('gallery-images')
+                                .remove([`${profile.id}/${filename}`]);
+                                
+                              if (error) throw error;
+                              
+                              // Update state - filter by base URL to handle cache-busting parameters
+                              setGalleryImages(prev => prev.filter(url => !url.startsWith(baseUrl)));
+                              setPhotoMessage({text: 'Photo deleted successfully!', type: 'success'});
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                            } catch (error) {
+                              console.error('Error deleting photo:', error);
+                              setPhotoMessage({
+                                text: error instanceof Error ? error.message : 'Failed to delete photo',
+                                type: 'error'
+                              });
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                            }
+                          }}
+                        >
+                          <XCircle className="h-6 w-6 text-white" />
+                        </button>
+                      </div>
                     </div>
                   ))}
+                  
+                  {/* Add Gallery Photo */}
+                  {galleryImages.length < 6 && (
+                    <label className="aspect-square bg-gray-100 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors">
+                      <Camera className="h-12 w-12 text-gray-400 mb-3" />
+                      <span className="text-base font-medium text-gray-700">Add Photo</span>
+                      <span className="text-xs text-gray-500 mt-1">Click to upload</span>
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        onChange={async (e) => {
+                          // Prevent form submission
+                          e.preventDefault();
+                          e.stopPropagation();
+                          
+                          if (!profile || !e.target.files || e.target.files.length === 0) return;
+                          
+                          try {
+                            setIsUploadingPhoto(true);
+                            setPhotoMessage({text: 'Uploading gallery photos...', type: 'info'});
+                            
+                            // Convert FileList to array
+                            const files = Array.from(e.target.files);
+                            
+                            // Check if adding these would exceed the limit
+                            if (galleryImages.length + files.length > 6) {
+                              throw new Error(`You can only have up to 6 gallery photos. You can add ${6 - galleryImages.length} more.`);
+                            }
+                            
+                            // Upload all files with watermark
+                            const uploadedImages = await uploadMultipleImages(files, 'gallery-images', profile.id, profile.id);
+                            
+                            // Clear the file input
+                            e.target.value = '';
+                            
+                            // Update state with new URLs and add timestamp to prevent caching
+                            const newUrls = uploadedImages.map(img => `${img.url}?t=${Date.now()}`);
+                            setGalleryImages(prev => [...prev, ...newUrls]);
+                            
+                            setPhotoMessage({text: 'Gallery photos uploaded successfully!', type: 'success'});
+                            setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                          } catch (error) {
+                            console.error('Error uploading gallery photos:', error);
+                            setPhotoMessage({
+                              text: error instanceof Error ? error.message : 'Failed to upload photos',
+                              type: 'error'
+                            });
+                            setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                          } finally {
+                            setIsUploadingPhoto(false);
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
                 </div>
 
                 <div className="bg-pink-50 rounded-lg p-4 text-sm text-gray-600">
@@ -699,12 +1205,35 @@ export default function LadySettings() {
               </div>
             )}
 
+            {/* Success and Error Messages */}
+            {saveSuccess && (
+              <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-4 flex items-center">
+                <CheckCircle className="h-5 w-5 mr-2" />
+                <p>Settings saved successfully!</p>
+              </div>
+            )}
+
+            {saveError && (
+              <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 flex items-center">
+                <AlertCircle className="h-5 w-5 mr-2" />
+                <p>{saveError}</p>
+              </div>
+            )}
+
             {/* Submit Button */}
             <button
               type="submit"
               className="w-full bg-pink-500 text-white px-8 py-3 rounded-lg hover:bg-pink-600 transition-colors font-medium"
+              disabled={saving}
             >
-              Save Changes
+              {saving ? (
+                <span className="flex items-center justify-center">
+                  <Loader className="h-5 w-5 text-white animate-spin mr-2" />
+                  Saving...
+                </span>
+              ) : (
+                'Save Changes'
+              )}
             </button>
           </form>
         </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { searchProfiles, SearchFilters as ServiceSearchFilters, SearchResult } from '../services/searchService';
 
 interface SearchFilters {
   location: string;
@@ -31,11 +32,59 @@ export default function Search() {
   });
 
   const radiusOptions = ['0', '5', '10', '25', '50'];
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const convertFiltersToServiceFilters = (filters: SearchFilters): ServiceSearchFilters => {
+    // Determine category based on selections
+    let category: 'ladies' | 'clubs' | 'all' = 'all';
+    
+    if (filters.type.includes('Sex Club / Escort Agency / Other') && !filters.type.includes('Ladies')) {
+      category = 'clubs';
+    } else if (filters.type.includes('Ladies') && !filters.type.includes('Sex Club / Escort Agency / Other')) {
+      category = 'ladies';
+    } else {
+      // If both or neither are selected, search all
+      category = 'all';
+    }
+
+    return {
+      location: filters.location,
+      category: category,
+      ageMin: parseInt(filters.age.min),
+      ageMax: parseInt(filters.age.max),
+      heightMin: parseInt(filters.height.min),
+      heightMax: parseInt(filters.height.max),
+      weightMin: parseInt(filters.weight.min),
+      weightMax: parseInt(filters.weight.max),
+      cupSize: filters.cupSize || undefined,
+      bodySize: filters.bodySize || undefined,
+      descent: filters.origin.length > 0 ? filters.origin[0] : undefined,
+      languages: filters.languages,
+      ethnicity: filters.origin.length > 0 ? filters.origin[0] : undefined,
+      bodyType: filters.bodySize || undefined,
+    };
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle search submission
-    console.log('Search filters:', filters);
+    setIsLoading(true);
+    setHasSearched(true);
+
+    try {
+      const serviceFilters = convertFiltersToServiceFilters(filters);
+      console.log('Searching with filters:', serviceFilters);
+      
+      const results = await searchProfiles(serviceFilters);
+      setSearchResults(results);
+      console.log('Search results:', results);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -457,13 +506,64 @@ export default function Search() {
           <div className="max-w-xl mx-auto">
             <button
               type="submit"
-              className="w-full bg-pink-500 text-white px-8 py-3 rounded-lg hover:bg-pink-600 transition-colors font-medium"
+              disabled={isLoading}
+              className="w-full bg-pink-500 text-white px-8 py-3 rounded-lg hover:bg-pink-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Search
+              {isLoading ? 'Searching...' : 'Search'}
             </button>
           </div>
         </div>
       </form>
+
+      {/* Search Results */}
+      {hasSearched && (
+        <div className="mt-8">
+          {isLoading ? (
+            <div className="bg-white rounded-xl shadow-sm p-8 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto mb-4"></div>
+              <p className="text-gray-600">Searching...</p>
+            </div>
+          ) : searchResults.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-sm p-8 text-center">
+              <div className="text-gray-400 text-6xl mb-4">😕</div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">No Results Found</h2>
+              <p className="text-gray-600">Try adjusting your search filters to find more matches.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Search Results ({searchResults.length} found)</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {searchResults.map((result) => (
+                  <div key={result.id} className="bg-gray-50 rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="text-lg font-semibold text-gray-900">{result.name}</h3>
+                      <div className="flex items-center space-x-1">
+                        <span className="text-yellow-400">★</span>
+                        <span className="text-sm text-gray-600">{result.rating.toFixed(1)}</span>
+                      </div>
+                    </div>
+                    <p className="text-gray-600 text-sm mb-2">{result.location}</p>
+                    {result.description && (
+                      <p className="text-gray-700 text-sm mb-3 line-clamp-2">{result.description}</p>
+                    )}
+                    <div className="flex justify-between items-center">
+                      <span className="text-pink-500 font-medium">{result.price || 'Contact for price'}</span>
+                      {result.is_club && (
+                        <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">Club</span>
+                      )}
+                    </div>
+                    {result.age && (
+                      <div className="mt-2 text-xs text-gray-500">
+                        Age: {result.age} • {result.height && `${result.height}cm`} • {result.cup_size && `Cup: ${result.cup_size}`}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
     </div>
   );

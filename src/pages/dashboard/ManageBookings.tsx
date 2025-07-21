@@ -1,13 +1,17 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useUserProfile } from '../../hooks/useUserProfile';
+import { 
+  getUpcomingBookings, 
+  getBookingStats, 
+  updateBookingStatus, 
+  setWeeklyAvailability, 
+  Booking as BookingType
+} from '../../services/bookingService';
 import { 
   ArrowLeft,
   Calendar,
-  Clock,
   Check,
-  X,
-  ChevronLeft,
-  ChevronRight,
   CalendarDays,
   CalendarOff,
   AlertCircle,
@@ -15,16 +19,16 @@ import {
   XCircle
 } from 'lucide-react';
 
-interface Booking {
+interface BookingDisplay {
   id: string;
   clientName: string;
-  clientPhone: string;
+  clientPhone?: string;
   date: string;
   time: string;
   duration: string;
-  service: string;
+  service?: string;
   price: string;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'rejected';
   message?: string;
   location: 'incall' | 'outcall';
   address?: string;
@@ -37,58 +41,22 @@ interface Availability {
   endTime?: string;
 }
 
-const sampleBookings: Booking[] = [
-  {
-    id: '1',
-    clientName: 'James M.',
-    clientPhone: '06 12 345 678',
-    date: '2024-01-15',
-    time: '14:00',
-    duration: '1 hour',
-    service: 'Standard Service',
-    price: '€130',
-    status: 'pending',
-    location: 'incall'
-  },
-  {
-    id: '2',
-    clientName: 'Michael P.',
-    clientPhone: '06 98 765 432',
-    date: '2024-01-15',
-    time: '18:00',
-    duration: '1 hour',
-    service: 'Standard Service',
-    price: '€130',
-    status: 'confirmed',
-    location: 'outcall',
-    address: 'Hotel Amsterdam, Room 123'
-  },
-  {
-    id: '3',
-    clientName: 'William T.',
-    clientPhone: '06 11 223 344',
-    date: '2024-01-14',
-    time: '20:00',
-    duration: '2 hours',
-    service: 'Premium Service',
-    price: '€250',
-    status: 'completed',
-    location: 'incall'
-  },
-  {
-    id: '4',
-    clientName: 'Robert K.',
-    clientPhone: '06 55 667 788',
-    date: '2024-01-13',
-    time: '15:00',
-    duration: '1 hour',
-    service: 'Standard Service',
-    price: '€130',
-    status: 'cancelled',
-    location: 'incall',
-    message: 'Client cancelled due to emergency'
-  }
-];
+// Helper function to convert database bookings to display format
+const formatBookingForDisplay = (booking: BookingType, clientName: string = 'Client'): BookingDisplay => {
+  return {
+    id: booking.id,
+    clientName: booking.client?.username || clientName,
+    clientPhone: booking.client?.email || undefined,
+    date: booking.date,
+    time: booking.time,
+    duration: `${booking.duration} minutes`,
+    price: `$${booking.total_cost}`,
+    status: booking.status,
+    location: booking.location_type as 'incall' | 'outcall',
+    address: booking.address,
+    message: booking.message
+  };
+};
 
 const defaultAvailability: Availability[] = [
   { day: 'Monday', isWorking: false },
@@ -100,7 +68,7 @@ const defaultAvailability: Availability[] = [
   { day: 'Sunday', isWorking: true, startTime: '09:00', endTime: '24:00' }
 ];
 
-const getStatusColor = (status: Booking['status']) => {
+const getStatusColor = (status: BookingDisplay['status']) => {
   switch (status) {
     case 'pending':
       return 'bg-yellow-100 text-yellow-800';
@@ -110,12 +78,14 @@ const getStatusColor = (status: Booking['status']) => {
       return 'bg-blue-100 text-blue-800';
     case 'cancelled':
       return 'bg-red-100 text-red-800';
+    case 'rejected':
+      return 'bg-red-100 text-red-800';
     default:
       return 'bg-gray-100 text-gray-800';
   }
 };
 
-const getStatusIcon = (status: Booking['status']) => {
+const getStatusIcon = (status: BookingDisplay['status']) => {
   switch (status) {
     case 'pending':
       return <AlertCircle className="h-5 w-5" />;
@@ -125,47 +95,170 @@ const getStatusIcon = (status: Booking['status']) => {
       return <Check className="h-5 w-5" />;
     case 'cancelled':
       return <XCircle className="h-5 w-5" />;
+    case 'rejected':
+      return <XCircle className="h-5 w-5" />;
     default:
       return null;
   }
 };
 
 export default function ManageBookings() {
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const { profile } = useUserProfile();
   const [availability, setAvailability] = useState<Availability[]>(defaultAvailability);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'cancelled'>('upcoming');
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<BookingDisplay | null>(null);
   const [action, setAction] = useState<'confirm' | 'cancel' | null>(null);
+  
+  const [bookings, setBookings] = useState<BookingDisplay[]>([]);
+  const [stats, setStats] = useState({
+    todayBookings: 0,
+    pendingApproval: 0
+  });
+  const [loading, setLoading] = useState({
+    bookings: true,
+    availability: true,
+    action: false,
+    stats: true
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch bookings and stats when profile is loaded
+  useEffect(() => {
+    if (!profile) return;
+    
+    const fetchBookingsAndStats = async () => {
+      try {
+        setLoading(prev => ({ ...prev, bookings: true, stats: true }));
+        setError(null);
+        
+        // Get all bookings for the profile
+        const allBookings = await getUpcomingBookings(profile.id, 100);
+        
+        // Format bookings for display
+        const formattedBookings = allBookings.map(booking => 
+          formatBookingForDisplay(booking)
+        );
+        
+        setBookings(formattedBookings);
+        
+        // Calculate stats
+        const today = new Date().toISOString().split('T')[0];
+        const todayBookings = allBookings.filter(booking => 
+          booking.date === today && ['pending', 'confirmed'].includes(booking.status)
+        ).length;
+        
+        const pendingApproval = allBookings.filter(booking => 
+          booking.status === 'pending'
+        ).length;
+        
+        setStats({
+          todayBookings,
+          pendingApproval
+        });
+      } catch (err) {
+        console.error('Error fetching bookings:', err);
+        setError('Failed to load bookings. Please try again.');
+      } finally {
+        setLoading(prev => ({ ...prev, bookings: false, stats: false }));
+      }
+    };
+    
+    fetchBookingsAndStats();
+  }, [profile]);
+  
+  // Fetch availability when profile is loaded
+  useEffect(() => {
+    if (!profile) return;
+    
+    // TODO: Implement fetching availability from the database
+    // For now, we'll use the default availability
+    setLoading(prev => ({ ...prev, availability: false }));
+  }, [profile]);
 
   const handleAvailabilityChange = (index: number, field: keyof Availability, value: any) => {
     const newAvailability = [...availability];
     newAvailability[index] = { ...newAvailability[index], [field]: value };
     setAvailability(newAvailability);
   };
+  
+  const saveAvailability = async () => {
+    if (!profile) return;
+    
+    try {
+      setLoading(prev => ({ ...prev, availability: true }));
+      setError(null);
+      
+      // Convert our UI availability format to the database format
+      const availabilityData = availability.map((day, index) => ({
+        day_of_week: index,
+        start_time: day.startTime || '09:00',
+        end_time: day.endTime || '17:00',
+        is_available: day.isWorking
+      }));
+      
+      // Save availability to the database
+      const success = await setWeeklyAvailability(profile.id, availabilityData);
+      
+      if (!success) throw new Error('Failed to save availability');
+      
+      alert('Availability saved successfully!');
+    } catch (err) {
+      console.error('Error saving availability:', err);
+      setError('Failed to save availability. Please try again.');
+    } finally {
+      setLoading(prev => ({ ...prev, availability: false }));
+    }
+  };
 
-  const handleAction = (booking: Booking, action: 'confirm' | 'cancel') => {
+  const handleAction = (booking: BookingDisplay, action: 'confirm' | 'cancel') => {
     setSelectedBooking(booking);
     setAction(action);
     setShowConfirmDialog(true);
   };
 
-  const confirmAction = () => {
-    // Handle the action here
-    console.log('Confirming action:', action, 'for booking:', selectedBooking);
-    setShowConfirmDialog(false);
-    setSelectedBooking(null);
-    setAction(null);
+  const confirmAction = async () => {
+    if (!selectedBooking || !action || !profile) return;
+    
+    try {
+      setLoading(prev => ({ ...prev, action: true }));
+      setError(null);
+      
+      const newStatus = action === 'confirm' ? 'confirmed' : 'cancelled';
+      
+      // Update booking status in the database
+      const success = await updateBookingStatus(selectedBooking.id, newStatus);
+      
+      if (!success) throw new Error(`Failed to ${action} booking`);
+      
+      // Update local state
+      setBookings(prevBookings => 
+        prevBookings.map(booking => 
+          booking.id === selectedBooking.id 
+            ? { ...booking, status: newStatus } 
+            : booking
+        )
+      );
+      
+      setShowConfirmDialog(false);
+      setSelectedBooking(null);
+      setAction(null);
+    } catch (err) {
+      console.error(`Error ${action}ing booking:`, err);
+      setError(`Failed to ${action} booking. Please try again.`);
+    } finally {
+      setLoading(prev => ({ ...prev, action: false }));
+    }
   };
 
-  const filteredBookings = sampleBookings.filter(booking => {
+  const filteredBookings = bookings.filter(booking => {
     switch (activeTab) {
       case 'upcoming':
         return ['pending', 'confirmed'].includes(booking.status);
       case 'past':
         return booking.status === 'completed';
       case 'cancelled':
-        return booking.status === 'cancelled';
+        return booking.status === 'cancelled' || booking.status === 'rejected';
       default:
         return true;
     }
@@ -188,21 +281,40 @@ export default function ManageBookings() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Manage Bookings</h1>
             <p className="text-gray-600 mt-1">
-              Manage your bookings and availability
+              {profile?.name ? `${profile.name}'s` : 'Your'} bookings and availability
             </p>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-center">
               <div className="text-sm text-gray-500">Today's Bookings</div>
-              <div className="text-2xl font-bold text-gray-900">3</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {loading.stats ? (
+                  <span className="inline-block h-6 w-6 animate-pulse bg-gray-200 rounded"></span>
+                ) : (
+                  stats.todayBookings
+                )}
+              </div>
             </div>
             <div className="text-center">
               <div className="text-sm text-gray-500">Pending Approval</div>
-              <div className="text-2xl font-bold text-pink-500">2</div>
+              <div className="text-2xl font-bold text-pink-500">
+                {loading.stats ? (
+                  <span className="inline-block h-6 w-6 animate-pulse bg-gray-200 rounded"></span>
+                ) : (
+                  stats.pendingApproval
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+          <p>{error}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column - Bookings */}
@@ -247,66 +359,70 @@ export default function ManageBookings() {
             {/* Bookings List */}
             <div className="p-6">
               <div className="space-y-4">
-                {filteredBookings.map((booking) => (
-                  <div
-                    key={booking.id}
-                    className="bg-gray-50 rounded-lg p-4 hover:bg-pink-50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${getStatusColor(booking.status)}`}>
-                          {getStatusIcon(booking.status)}
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {booking.clientName} • <span className="text-gray-500">{booking.clientPhone}</span>
+                {loading.bookings ? (
+                  <div className="flex justify-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-pink-500"></div>
+                  </div>
+                ) : filteredBookings.length > 0 ? (
+                  filteredBookings.map((booking) => (
+                    <div
+                      key={booking.id}
+                      className="bg-gray-50 rounded-lg p-4 hover:bg-pink-50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${getStatusColor(booking.status)}`}>
+                            {getStatusIcon(booking.status)}
                           </div>
-                          <div className="text-sm text-gray-500">
-                            {new Date(booking.date).toLocaleDateString()} • {booking.time}
+                          <div>
+                            <div className="font-medium text-gray-900">
+                              {booking.clientName} • <span className="text-gray-500">{booking.clientPhone}</span>
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {new Date(booking.date).toLocaleDateString()} • {booking.time}
+                            </div>
                           </div>
                         </div>
+                        <div className="text-right">
+                          <div className="font-medium text-gray-900">{booking.price}</div>
+                          <div className="text-sm text-gray-500">{booking.duration}</div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-medium text-gray-900">{booking.price}</div>
-                        <div className="text-sm text-gray-500">{booking.duration}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between mt-4">
-                      <div className="text-sm text-gray-600">
-                        {booking.location === 'incall' ? 'Client visits you' : 'You visit client'}
-                        {booking.address && ` • ${booking.address}`}
-                      </div>
-                      <div className="flex gap-2">
-                        {booking.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => handleAction(booking, 'confirm')}
-                              className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
-                            >
-                              Confirm
-                            </button>
+                      <div className="flex items-center justify-between mt-4">
+                        <div className="text-sm text-gray-600">
+                          {booking.location === 'incall' ? 'Client visits you' : 'You visit client'}
+                          {booking.address && ` • ${booking.address}`}
+                        </div>
+                        <div className="flex gap-2">
+                          {booking.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => handleAction(booking, 'confirm')}
+                                className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => handleAction(booking, 'cancel')}
+                                className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
+                              >
+                                Decline
+                              </button>
+                            </>
+                          )}
+                          {booking.status === 'confirmed' && (
                             <button
                               onClick={() => handleAction(booking, 'cancel')}
                               className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
                             >
-                              Decline
+                              Cancel
                             </button>
-                          </>
-                        )}
-                        {booking.status === 'confirmed' && (
-                          <button
-                            onClick={() => handleAction(booking, 'cancel')}
-                            className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
-                          >
-                            Cancel
-                          </button>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-
-                {filteredBookings.length === 0 && (
+                  ))
+                ) : (
                   <div className="text-center py-12">
                     <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">No bookings found</h3>
@@ -375,11 +491,12 @@ export default function ManageBookings() {
                   )}
                 </div>
               ))}
-
               <button
-                className="w-full bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 transition-colors mt-6"
+                className={`w-full ${loading.availability ? 'bg-pink-300' : 'bg-pink-500 hover:bg-pink-600'} text-white px-4 py-2 rounded-lg transition-colors mt-6`}
+                onClick={saveAvailability}
+                disabled={loading.availability}
               >
-                Save Changes
+                {loading.availability ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -422,13 +539,16 @@ export default function ManageBookings() {
               </button>
               <button
                 onClick={confirmAction}
+                disabled={loading.action}
                 className={`px-4 py-2 text-white rounded-lg ${
-                  action === 'confirm'
+                  loading.action
+                    ? 'bg-gray-400'
+                    : action === 'confirm'
                     ? 'bg-green-500 hover:bg-green-600'
                     : 'bg-red-500 hover:bg-red-600'
                 }`}
               >
-                Yes, {action === 'confirm' ? 'confirm' : 'cancel'}
+                {loading.action ? 'Processing...' : `Yes, ${action === 'confirm' ? 'confirm' : 'cancel'}`}
               </button>
             </div>
           </div>

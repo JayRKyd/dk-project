@@ -1,96 +1,60 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Heart, Send, Calendar, ChevronLeft, ChevronRight, Coins, Gift } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import { giftService, type GiftWithReplies } from '../../services/giftService';
 
-interface Gift {
-  id: string;
-  sender: {
-    name: string;
-    imageUrl: string;
-  };
-  type: {
-    name: string;
-    emoji: string;
-    credits: number;
-  };
-  message?: string;
-  reply?: string;
-  collected: boolean;
-  date: string;
-  time: string;
-}
+export default function GiftsReceived() {
+  const { user } = useAuth();
+  const [gifts, setGifts] = useState<GiftWithReplies[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [replyText, setReplyText] = useState<{ [key: string]: string }>({});
+  const [sendingReply, setSendingReply] = useState<{ [key: string]: boolean }>({});
 
-const gifts: Gift[] = [
-  {
-    id: '1',
-    sender: {
-      name: 'William T.',
-      imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80'
-    },
-    type: {
-      name: 'Diamond',
-      emoji: '💎',
-      credits: 200
-    },
-    message: 'You are absolutely stunning! Hope to see you again soon.',
-    collected: false,
-    date: '2024-01-12',
-    time: '15:30'
-  },
-  {
-    id: '2',
-    sender: {
-      name: 'Michael P.',
-      imageUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80'
-    },
-    type: {
-      name: 'Rose',
-      emoji: '🌹',
-      credits: 10
-    },
-    message: 'Thank you for the wonderful time!',
-    reply: 'Thank you for the lovely rose! 😊',
-    collected: true,
-    date: '2024-01-12',
-    time: '12:45'
-  },
-  {
-    id: '3',
-    sender: {
-      name: 'James R.',
-      imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'
-    },
-    type: {
-      name: 'Crown',
-      emoji: '👑',
-      credits: 250
-    },
-    message: 'You deserve to be treated like a queen!',
-    date: '2024-01-11',
-    time: '18:20'
-  },
-  {
-    id: '4',
-    sender: {
-      name: 'David K.',
-      imageUrl: 'https://images.unsplash.com/photo-1463453091185-61582044d556?auto=format&fit=crop&w=150&q=80'
-    },
-    type: {
-      name: 'Gift Box',
-      emoji: '💝',
-      credits: 50
-    },
-    message: 'Looking forward to our next meeting!',
-    reply: 'Thank you for the gift! See you soon! 💋',
-    collected: false,
-    date: '2024-01-11',
-    time: '14:15'
-  }
-];
+  useEffect(() => {
+    if (user?.id) {
+      loadGiftsReceived();
+    }
+  }, [user?.id]);
+
+  const loadGiftsReceived = async () => {
+    if (!user?.id) return;
+    
+    try {
+      setLoading(true);
+      setError(null);
+      const giftsData = await giftService.getGiftsWithReplies(user.id, 'received');
+      setGifts(giftsData);
+    } catch (err) {
+      console.error('Error loading gifts received:', err);
+      setError('Failed to load gifts. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReply = async (giftId: string) => {
+    if (!replyText[giftId]?.trim()) return;
+    
+    try {
+      setSendingReply(prev => ({ ...prev, [giftId]: true }));
+      await giftService.sendGiftReply(giftId, replyText[giftId]);
+      setReplyText(prev => ({ ...prev, [giftId]: '' }));
+      // Reload gifts to show the new reply
+      await loadGiftsReceived();
+    } catch (err) {
+      console.error('Error sending reply:', err);
+      alert('Failed to send reply. Please try again.');
+    } finally {
+      setSendingReply(prev => ({ ...prev, [giftId]: false }));
+    }
+  };
 
 // Group gifts by date
-const groupGiftsByDate = (gifts: Gift[]) => {
-  const groups: { [key: string]: Gift[] } = {};
+const groupGiftsByDate = (gifts: GiftWithReplies[]) => {
+  const groups: { [key: string]: GiftWithReplies[] } = {};
   
   gifts.forEach(gift => {
     if (!groups[gift.date]) {
@@ -112,23 +76,12 @@ const formatDate = (dateStr: string) => {
   });
 };
 
-export default function GiftsReceived() {
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [replyText, setReplyText] = useState<{ [key: string]: string }>({});
-  
   const groupedGifts = groupGiftsByDate(gifts);
   const dates = Object.keys(groupedGifts).sort().reverse();
   
-  // Calculate total uncollected credits
-  const uncollectedCredits = groupedGifts[selectedDate]?.reduce((total, gift) => {
-    if (!gift.collected) {
-      return total + gift.type.credits;
-    }
-    return total;
-  }, 0) || 0;
-
-  // Calculate total credits received
+  // Calculate total credits received (all gifts are considered collected in new system)
   const totalCredits = gifts.reduce((sum, gift) => sum + gift.type.credits, 0);
+  const uncollectedCredits = 0; // In new system, all gifts are automatically collected
 
   const navigateDate = (direction: 'prev' | 'next') => {
     const currentIndex = dates.indexOf(selectedDate);
@@ -139,13 +92,79 @@ export default function GiftsReceived() {
     }
   };
 
-  const handleReply = (giftId: string) => {
-    if (replyText[giftId]?.trim()) {
-      console.log('Sending reply for gift', giftId, ':', replyText[giftId]);
-      // Here you would typically make an API call to save the reply
-      setReplyText(prev => ({ ...prev, [giftId]: '' }));
-    }
-  };
+
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Link
+          to="/dashboard/lady"
+          className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 group"
+        >
+          <ArrowLeft className="h-5 w-5 transform group-hover:-translate-x-1 transition-transform" />
+          <span>Back to Dashboard</span>
+        </Link>
+
+        <div className="bg-white rounded-xl shadow-sm p-8 mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Gifts Received</h1>
+          <p className="text-gray-600 mt-1">Loading gifts...</p>
+        </div>
+
+        <div className="space-y-6">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-white rounded-xl shadow-sm p-6 animate-pulse">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 bg-gray-200 rounded-full"></div>
+                  <div>
+                    <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                    <div className="h-3 bg-gray-200 rounded w-32"></div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-12 h-12 bg-gray-200 rounded"></div>
+                  <div className="h-6 bg-gray-200 rounded w-16"></div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Link
+          to="/dashboard/lady"
+          className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 group"
+        >
+          <ArrowLeft className="h-5 w-5 transform group-hover:-translate-x-1 transition-transform" />
+          <span>Back to Dashboard</span>
+        </Link>
+
+        <div className="bg-white rounded-xl shadow-sm p-8 mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Gifts Received</h1>
+          <p className="text-gray-600 mt-1">Error loading gifts</p>
+        </div>
+
+        <div className="text-center py-12 bg-white rounded-xl shadow-sm">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Gifts</h3>
+          <p className="text-gray-500 mb-4">{error}</p>
+          <button
+            onClick={loadGiftsReceived}
+            className="px-6 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -244,12 +263,12 @@ export default function GiftsReceived() {
             <div className="p-6 flex flex-col sm:flex-row items-start gap-4">
               <div className="flex items-center gap-4">
                 <img
-                  src={gift.sender.imageUrl}
-                  alt={gift.sender.name}
+                  src={gift.recipient.imageUrl}
+                  alt={gift.recipient.name}
                   className="w-16 h-16 rounded-full object-cover ring-4 ring-pink-100"
                 />
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">{gift.sender.name}</h3>
+                  <h3 className="text-lg font-medium text-gray-900">{gift.recipient.name}</h3>
                   <p className="text-sm text-gray-500">
                     {gift.date} at {gift.time}
                   </p>
@@ -271,43 +290,44 @@ export default function GiftsReceived() {
               </div>
             )}
 
-            {/* Reply Section */}
+            {/* Replies Section */}
             <div className="px-6 pb-6">
-              {gift.reply ? (
-                <div className="bg-pink-50 rounded-lg p-6">
-                  <div className="flex items-center gap-2 mb-2">
-                    {gift.collected ? (
-                      <span className="text-green-600">Collected</span>
-                    ) : (
-                      <>
-                        <Coins className="h-4 w-4" />
-                        <span>{gift.type.credits} DK</span>
-                      </>
-                    )}
-                  </div>
-                  <p className="text-gray-700">{gift.reply}</p>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={replyText[gift.id] || ''}
-                    onChange={(e) => setReplyText(prev => ({
-                      ...prev,
-                      [gift.id]: e.target.value
-                    }))}
-                    placeholder="Write a thank you message..."
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                  />
-                  <button
-                    onClick={() => handleReply(gift.id)}
-                    className="bg-pink-500 text-white px-6 py-3 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2 font-medium"
-                  >
-                    <Send className="h-4 w-4" />
-                    <span>Reply</span>
-                  </button>
+              {/* Show existing replies */}
+              {gift.replies && gift.replies.length > 0 && (
+                <div className="mb-4 space-y-3">
+                  {gift.replies.map((reply) => (
+                    <div key={reply.id} className="bg-pink-50 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Heart className="h-4 w-4 text-pink-500" />
+                        <span className="font-medium text-gray-900">Reply from {reply.sender_name}</span>
+                      </div>
+                      <p className="text-gray-700">{reply.message}</p>
+                    </div>
+                  ))}
                 </div>
               )}
+              
+              {/* Reply input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={replyText[gift.id] || ''}
+                  onChange={(e) => setReplyText(prev => ({
+                    ...prev,
+                    [gift.id]: e.target.value
+                  }))}
+                  placeholder="Write a thank you message..."
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                />
+                <button
+                  onClick={() => handleReply(gift.id)}
+                  disabled={sendingReply[gift.id] || !replyText[gift.id]?.trim()}
+                  className="bg-pink-500 text-white px-6 py-3 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Send className="h-4 w-4" />
+                  <span>{sendingReply[gift.id] ? 'Sending...' : 'Reply'}</span>
+                </button>
+              </div>
             </div>
           </div>
         ))}

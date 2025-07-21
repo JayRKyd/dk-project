@@ -44,7 +44,7 @@ export interface Profile {
   isClub: boolean;
   description: string;
   discount?: number;
-  membershipTier: 'FREE' | 'PRO' | 'PRO-PLUS' | 'ULTRA';
+  membershipTier: 'FREE' | 'PRO';
 }
 
 export interface PromoCard extends Profile {

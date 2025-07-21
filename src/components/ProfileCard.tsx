@@ -11,8 +11,7 @@ interface ProfileCardProps {
   isClub?: boolean;
   description?: string;
   price?: string;
-  membershipTier: 'FREE' | 'PRO' | 'PRO-PLUS' | 'ULTRA';
-  hideText?: boolean;
+  membershipTier: 'FREE' | 'PRO' | 'PRO-PLUS' | 'ULTRA' | 'PROMO';
   hideText?: boolean;
 }
 
@@ -39,19 +38,18 @@ const tierStyles = {
     heart: 'text-pink-500'
   },
   'PRO-PLUS': {
-    card: 'bg-gradient-to-br from-pink-100 to-pink-50',
+    card: 'bg-white',
     badge: 'bg-pink-500',
-    name: 'text-pink-600 font-semibold',
-    buttons: 'bg-pink-500 hover:bg-pink-600',
-    heart: 'text-pink-500',
-    border: 'border-2 border-pink-300'
-  },
-  ULTRA: {
-    card: 'bg-yellow-50 border-2 border-yellow-400',
-    badge: 'bg-pink-500',
-    name: 'text-pink-500 font-bold',
+    name: 'text-pink-500',
     buttons: 'bg-pink-500 hover:bg-pink-600',
     heart: 'text-pink-500'
+  },
+  ULTRA: {
+    card: 'bg-white',
+    badge: 'bg-yellow-500',
+    name: 'text-yellow-600',
+    buttons: 'bg-yellow-500 hover:bg-yellow-600',
+    heart: 'text-yellow-500'
   }
 };
 
@@ -71,7 +69,7 @@ export default function ProfileCard({
   const styles = tierStyles[membershipTier];
 
   return (
-    <div className={`${styles.card} ${membershipTier === 'PRO-PLUS' ? styles.border : ''} rounded-2xl overflow-hidden shadow-lg transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl ${membershipTier === 'ULTRA' ? 'hover:border-yellow-500' : ''} h-[500px]`}>
+    <div className={`${styles.card} rounded-2xl overflow-hidden shadow-lg transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl h-[500px]`}>
       <div className="relative">
         {price && (
           <div className={`absolute top-0 right-0 ${styles.badge} text-white px-4 py-1 rounded-bl-lg transform transition-all duration-300 hover:scale-110 font-medium`}>
@@ -89,7 +87,7 @@ export default function ProfileCard({
         <img
           src={imageUrl}
           alt={name}
-          className={`w-full ${hideText ? 'h-[500px]' : 'h-80'} object-cover transition-all duration-300 hover:brightness-110 ${membershipTier === 'ULTRA' ? 'hover:contrast-[1.02]' : ''}`}
+          className={`w-full ${hideText ? 'h-[500px]' : 'h-80'} object-cover transition-all duration-300 hover:brightness-110`}
         />
         {hideText && (
           <div className="absolute bottom-4 right-4 bg-pink-500 text-white px-3 py-1 rounded-lg text-sm transform transition-all duration-300 hover:scale-110">
@@ -106,14 +104,8 @@ export default function ProfileCard({
         )}
       </div>
       {!hideText && <div className="p-4 relative">
-        {(membershipTier === 'ULTRA' || membershipTier === 'PRO-PLUS' || membershipTier === 'PRO' || membershipTier === 'PROMO') && (
-          <div className={`absolute -top-4 right-4 ${
-            membershipTier === 'ULTRA' ? 'bg-pink-500' : 
-            membershipTier === 'PRO-PLUS' ? 'bg-pink-400' :
-            membershipTier === 'PROMO' ? 'bg-pink-300' :
-            'bg-pink-300'
-          } text-white text-xs px-4 py-1.5 rounded-full font-semibold shadow-md transform transition-all duration-300 hover:scale-105`}>
-            {membershipTier}
+        {membershipTier === 'PRO' && (
+          <div className="absolute -top-4 right-4 bg-pink-300 w-3 h-3 rounded-full shadow-md transform transition-all duration-300 hover:scale-110">
           </div>
         )}
         <div className="flex justify-between items-center mb-2">

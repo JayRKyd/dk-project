@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft,
@@ -13,8 +13,12 @@ import {
   X,
   Check,
   Camera,
-  Eye
+  Eye,
+  Shield,
+  AlertCircle
 } from 'lucide-react';
+import { useFanPosts } from '../../hooks/useProtectedApi';
+import { MembershipGuard } from '../../components/auth/MembershipGuard';
 
 type Theme = 'Happy' | 'Romantic' | 'No comment' | 'Sexy' | 'Wild' | 'Hardcore';
 
@@ -115,7 +119,18 @@ export default function ManageFanPosts() {
   const [selectedPost, setSelectedPost] = useState<FanPost | null>(null);
   const [replyText, setReplyText] = useState<{ [key: string]: string }>({});
 
+  // Protected API integration
+  const { list: fanPostsApi, createFanPost } = useFanPosts();
+
   const themes: Theme[] = ['Happy', 'Romantic', 'No comment', 'Sexy', 'Wild', 'Hardcore'];
+
+  // Load fan posts with membership validation
+  useEffect(() => {
+    const loadFanPosts = async () => {
+      await fanPostsApi.execute();
+    };
+    loadFanPosts();
+  }, [fanPostsApi]);
 
   const [newPost, setNewPost] = useState({
     content: '',
@@ -164,8 +179,46 @@ export default function ManageFanPosts() {
     }
   };
 
+  // Wrap entire component with membership protection
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <MembershipGuard requiredTier="PRO" redirectTo="/dashboard/lady/upgrade">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Membership Protection Status */}
+        {fanPostsApi.membershipError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-red-500" />
+              <div>
+                <h4 className="font-medium text-red-900">Access Restricted</h4>
+                <p className="text-sm text-red-700">
+                  {fanPostsApi.membershipError.message}
+                </p>
+                <Link 
+                  to="/dashboard/lady/upgrade" 
+                  className="text-sm text-red-600 hover:text-red-800 underline"
+                >
+                  Upgrade to PRO →
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* API Protection Status */}
+        {fanPostsApi.loading && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-3">
+              <Shield className="h-5 w-5 text-blue-500 animate-pulse" />
+              <div>
+                <h4 className="font-medium text-blue-900">Validating Access</h4>
+                <p className="text-sm text-blue-700">
+                  Checking your membership permissions...
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       {/* Back Button */}
       <Link
         to="/dashboard/lady"
@@ -523,5 +576,6 @@ export default function ManageFanPosts() {
         </div>
       )}
     </div>
+    </MembershipGuard>
   );
 }

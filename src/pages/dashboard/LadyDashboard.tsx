@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useUserProfile } from '../../hooks/useUserProfile';
 import { 
   Users, 
   Heart, 
@@ -20,11 +21,13 @@ import {
   Shield
 } from 'lucide-react';
 
+
 interface DashboardState {
   membershipTier: 'FREE' | 'PRO' | 'PRO-PLUS' | 'ULTRA';
 }
 
 export default function LadyDashboard() {
+  const { profile } = useUserProfile();
   const [dashboardData] = useState<DashboardState>({
     membershipTier: 'PRO'
   });
@@ -97,7 +100,7 @@ export default function LadyDashboard() {
         </div>
         <div className="flex items-center gap-4">
           <Link
-            to="/ladies/pro/melissa"
+            to={`/ladies/${profile?.id}`}
             className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg transition-colors mb-2 sm:mb-0"
           >
             <Eye className="h-5 w-5" />

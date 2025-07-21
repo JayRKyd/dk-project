@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { MapPin, Loader } from 'lucide-react';
 import ProfileCard from '../components/ProfileCard';
 import SearchBar from '../components/SearchBar';
 import { Profile, PromoCard } from '../types';
 
 const getAdvertisementRoute = (profile: Profile) => {
-  return profile.membershipTier === 'PRO' || profile.membershipTier === 'PRO-PLUS' || profile.membershipTier === 'ULTRA'
+  return profile.membershipTier === 'PRO'
     ? `/ladies/pro/${profile.id}`
     : `/ladies/${profile.id}`;
 };
@@ -15,12 +16,12 @@ const clothingPromo: PromoCard = {
   name: 'Sexy Lingerie Store',
   location: 'Amsterdam',
   imageUrl: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=800&q=80',
+  rating: 9.0,
   loves: 324,
   isVerified: true,
   isClub: false,
   description: 'Premium lingerie and adult clothing. Special offer: 20% off on all items!',
-  price: '€20',
-  membershipTier: 'PROMO',
+  membershipTier: 'PRO',
   isPromo: true
 };
 
@@ -29,11 +30,12 @@ const photoPromo: PromoCard = {
   name: 'Photo Studio',
   location: 'Amsterdam',
   imageUrl: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&w=800&q=80',
+  rating: 8.5,
   loves: 0,
   isVerified: false,
   isClub: false,
   description: '',
-  membershipTier: 'PROMO',
+  membershipTier: 'PRO',
   isPromo: true,
   hideText: true
 };
@@ -48,8 +50,7 @@ const sampleProfiles: Profile[] = [
     isVerified: true,
     isClub: false,
     description: 'Hi, I\'m Sophia! I offer a genuine GFE experience. Available for incall and outcall.',
-    price: '€ 50',
-    membershipTier: 'ULTRA'
+    membershipTier: 'PRO'
   },
   {
     id: '5',
@@ -97,8 +98,7 @@ const sampleProfiles: Profile[] = [
     isVerified: true,
     isClub: true,
     description: 'Premium escort agency with the most beautiful ladies in Rotterdam.',
-    price: '€ 50',
-    membershipTier: 'PRO-PLUS'
+    membershipTier: 'PRO'
   },
   {
     id: '7',
@@ -138,10 +138,140 @@ const sampleProfiles: Profile[] = [
   }
 ];
 
+// Netherlands city proximity map for location fallback
+const nearbyCities: Record<string, string[]> = {
+  "Amsterdam": ["Haarlem", "Utrecht", "The Hague"],
+  "Rotterdam": ["The Hague", "Utrecht", "Delft"],
+  "Utrecht": ["Amsterdam", "Amersfoort", "Hilversum"],
+  "The Hague": ["Rotterdam", "Amsterdam", "Delft"],
+  "Eindhoven": ["Utrecht", "Tilburg", "Breda"],
+  "Groningen": ["Assen", "Leeuwarden", "Zwolle"],
+  "Maastricht": ["Eindhoven", "Venlo", "Roermond"]
+};
+
+// Simple function to get nearest Dutch city from coordinates
+const getNearestDutchCity = (lat: number, lng: number): string => {
+  // Simple distance calculation to major Dutch cities
+  const cities = [
+    { name: "Amsterdam", lat: 52.3676, lng: 4.9041 },
+    { name: "Rotterdam", lat: 51.9244, lng: 4.4777 },
+    { name: "Utrecht", lat: 52.0907, lng: 5.1214 },
+    { name: "The Hague", lat: 52.0705, lng: 4.3007 },
+    { name: "Eindhoven", lat: 51.4416, lng: 5.4697 },
+    { name: "Groningen", lat: 53.2194, lng: 6.5665 },
+    { name: "Maastricht", lat: 50.8514, lng: 5.6909 }
+  ];
+
+  let nearestCity = "Amsterdam"; // default
+  let minDistance = Infinity;
+
+  cities.forEach(city => {
+    const distance = Math.sqrt(
+      Math.pow(lat - city.lat, 2) + Math.pow(lng - city.lng, 2)
+    );
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestCity = city.name;
+    }
+  });
+
+  return nearestCity;
+};
+
 export default function Ladies() {
+  const [clientLocation, setClientLocation] = useState<string | null>(null);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [filteredProfiles, setFilteredProfiles] = useState<Profile[]>(sampleProfiles);
+  const [showingNearby, setShowingNearby] = useState(false);
+
+  useEffect(() => {
+    // Request user's location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const nearestCity = getNearestDutchCity(latitude, longitude);
+          setClientLocation(nearestCity);
+          setLocationLoading(false);
+        },
+        () => {
+          // Permission denied or error - show all ladies
+          setLocationLoading(false);
+        }
+      );
+    } else {
+      // Geolocation not supported - show all ladies
+      setLocationLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!clientLocation) {
+      // No location detected - show all ladies
+      setFilteredProfiles(sampleProfiles);
+      return;
+    }
+
+    // Filter ladies by client's city first
+    let cityLadies = sampleProfiles.filter(lady => 
+      lady.location.toLowerCase().includes(clientLocation.toLowerCase())
+    );
+
+    // If not enough results in the city, expand to nearby cities
+    if (cityLadies.length < 3) {
+      const nearby = nearbyCities[clientLocation] || [];
+      const nearbyLadies = sampleProfiles.filter(lady => 
+        nearby.some(city => lady.location.toLowerCase().includes(city.toLowerCase()))
+      );
+      
+      if (nearbyLadies.length > 0) {
+        cityLadies = [...cityLadies, ...nearbyLadies];
+        setShowingNearby(true);
+      }
+    }
+
+    // If still no results, show all ladies
+    if (cityLadies.length === 0) {
+      cityLadies = sampleProfiles;
+    }
+
+    setFilteredProfiles(cityLadies);
+  }, [clientLocation]);
+
+  // Sort profiles by tier (PRO first, then FREE)
+  const sortedProfiles = filteredProfiles.sort((a, b) => {
+    const tierPriority = { 'PRO': 1, 'FREE': 2 };
+    return tierPriority[a.membershipTier] - tierPriority[b.membershipTier];
+  });
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <SearchBar />
+      
+      {/* Location Status Banner */}
+      {locationLoading ? (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex items-center">
+          <Loader className="h-5 w-5 text-blue-500 animate-spin mr-3" />
+          <span className="text-blue-700">Detecting your location...</span>
+        </div>
+      ) : clientLocation ? (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6 flex items-center">
+          <MapPin className="h-5 w-5 text-green-500 mr-3" />
+          <span className="text-green-700">
+            Showing ladies in {clientLocation}
+            {showingNearby && " and nearby cities"}
+            {" "}({filteredProfiles.length} results)
+          </span>
+        </div>
+      ) : (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 flex items-center">
+          <MapPin className="h-5 w-5 text-gray-500 mr-3" />
+          <span className="text-gray-700">
+            Showing all ladies ({filteredProfiles.length} results)
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-8">
         {/* Clothing Promo Card */}
         <Link to="/store/lingerie" className="block">
@@ -153,20 +283,7 @@ export default function Ladies() {
           <ProfileCard {...photoPromo} />
         </Link>
 
-        {sampleProfiles
-          .sort((a, b) => {
-            // Define tier priority
-            const tierPriority = {
-              'ULTRA': 0,
-              'PRO-PLUS': 1,
-              'PRO': 2,
-              'FREE': 3
-            };
-            
-            // Sort by tier priority
-            return tierPriority[a.membershipTier] - tierPriority[b.membershipTier];
-          })
-          .map((profile) => {
+        {sortedProfiles.map((profile) => {
           const ProfileCardWrapper = () => (
             <Link to={getAdvertisementRoute(profile)} className="block">
               <ProfileCard key={profile.id} {...profile} />

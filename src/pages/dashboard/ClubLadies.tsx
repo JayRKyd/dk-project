@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   ArrowLeft,
@@ -11,82 +11,80 @@ import {
   Settings,
   Trash2,
   Edit,
-  Camera
+  Camera,
+  Loader2
 } from 'lucide-react';
+import { useClubDashboard } from '../../hooks/useClubDashboard';
+import { clubService, ClubLady } from '../../services/clubService';
 
+// Enhanced Lady interface to match our database structure
 interface Lady {
   id: string;
   name: string;
-  imageUrl: string;
-  age: number;
-  nationality: string;
-  rating: number;
-  loves: number;
+  imageUrl?: string;
+  age?: number;
+  nationality?: string;
+  rating?: number;
+  loves?: number;
   isVerified: boolean;
-  status: 'active' | 'inactive' | 'pending';
+  status: 'active' | 'inactive' | 'suspended';
+  // Additional database fields
+  club_id: string;
+  lady_id: string;
+  join_date: string;
+  revenue_share_percentage: number;
+  monthly_fee?: number;
+  lady?: {
+    id: string;
+    username: string;
+    email: string;
+  };
+  profile?: {
+    id: string;
+    name: string;
+    image_url?: string;
+  };
 }
 
-const sampleLadies: Lady[] = [
-  {
-    id: '1',
-    name: 'Sophia',
-    imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-    age: 23,
-    nationality: 'Russian',
-    rating: 9.5,
-    loves: 245,
-    isVerified: true,
-    status: 'active'
-  },
-  {
-    id: '2',
-    name: 'Emma',
-    imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
-    age: 25,
-    nationality: 'Dutch',
-    rating: 9.2,
-    loves: 178,
-    isVerified: true,
-    status: 'active'
-  },
-  {
-    id: '3',
-    name: 'Isabella',
-    imageUrl: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=300&q=80',
-    age: 24,
-    nationality: 'Italian',
-    rating: 9.7,
-    loves: 312,
-    isVerified: true,
-    status: 'active'
-  },
-  {
-    id: '4',
-    name: 'Victoria',
-    imageUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=300&q=80',
-    age: 22,
-    nationality: 'Romanian',
-    rating: 8.8,
-    loves: 156,
-    isVerified: false,
-    status: 'pending'
-  }
-];
-
 export default function ClubLadies() {
+  const { clubProfile, ladies, loading, actions } = useClubDashboard();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedLady, setSelectedLady] = useState<Lady | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState<'active' | 'inactive'>('active');
+  const [selectedStatus, setSelectedStatus] = useState<'active' | 'inactive' | 'suspended'>('active');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'pending'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'suspended'>('all');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedLadyForUpgrade, setSelectedLadyForUpgrade] = useState<Lady | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Convert ClubLady[] to Lady[] format for UI compatibility
+  const convertToLady = (clubLady: ClubLady): Lady => ({
+    id: clubLady.id,
+    name: clubLady.profile?.name || clubLady.lady?.username || 'Unknown',
+    imageUrl: clubLady.profile?.image_url,
+    age: undefined, // Would need to be added to profile table
+    nationality: undefined, // Would need to be added to profile table
+    rating: undefined, // Would need analytics data
+    loves: undefined, // Would need analytics data
+    isVerified: false, // Would check verification status
+    status: clubLady.status,
+    club_id: clubLady.club_id,
+    lady_id: clubLady.lady_id,
+    join_date: clubLady.join_date,
+    revenue_share_percentage: clubLady.revenue_share_percentage,
+    monthly_fee: clubLady.monthly_fee,
+    lady: clubLady.lady,
+    profile: clubLady.profile
+  });
+
+  const processedLadies = ladies.map(convertToLady);
 
   // Filter ladies based on search query and status
-  const filteredLadies = sampleLadies.filter(lady => {
+  const filteredLadies = processedLadies.filter(lady => {
     const matchesSearch = lady.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         lady.nationality.toLowerCase().includes(searchQuery.toLowerCase());
+                         (lady.nationality && lady.nationality.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                         (lady.lady?.username && lady.lady.username.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesStatus = statusFilter === 'all' || lady.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -96,12 +94,61 @@ export default function ClubLadies() {
     setShowDeleteConfirm(true);
   };
 
-  const confirmDelete = () => {
-    // Handle delete logic here
-    console.log('Deleting lady:', selectedLady?.name);
-    setShowDeleteConfirm(false);
-    setSelectedLady(null);
+  const confirmDelete = async () => {
+    if (!selectedLady || !clubProfile?.id) return;
+    
+    setIsSubmitting(true);
+    try {
+      // Call API to remove lady from club
+      await clubService.removeLadyFromClub(clubProfile.id, selectedLady.lady_id);
+      
+      // Refresh ladies data
+      await actions.fetchClubLadies(clubProfile.id);
+      
+      console.log('Successfully removed lady:', selectedLady.name);
+    } catch (error) {
+      console.error('Error removing lady:', error);
+      // Could add error notification here
+    } finally {
+      setIsSubmitting(false);
+      setShowDeleteConfirm(false);
+      setSelectedLady(null);
+    }
   };
+
+  const handleStatusChange = async () => {
+    if (!selectedLady || !clubProfile?.id) return;
+    
+    setIsSubmitting(true);
+    try {
+      // Call API to update lady status
+      await clubService.updateLadyStatus(clubProfile.id, selectedLady.lady_id, selectedStatus);
+      
+      // Refresh ladies data
+      await actions.fetchClubLadies(clubProfile.id);
+      
+      console.log('Successfully changed status for:', selectedLady.name, 'to', selectedStatus);
+    } catch (error) {
+      console.error('Error changing lady status:', error);
+      // Could add error notification here
+    } finally {
+      setIsSubmitting(false);
+      setShowStatusModal(false);
+      setSelectedLady(null);
+    }
+  };
+
+  // Show loading state
+  if (loading.ladies) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-pink-500" />
+          <span className="ml-2 text-gray-600">Loading ladies...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -134,12 +181,12 @@ export default function ClubLadies() {
         <div className="flex items-center gap-4 mt-4">
           <div className="bg-pink-50 px-4 py-2 rounded-lg">
             <span className="text-sm text-gray-600">Total Ladies:</span>
-            <span className="ml-2 font-bold text-pink-500">{sampleLadies.length}</span>
+            <span className="ml-2 font-bold text-pink-500">{processedLadies.length}</span>
           </div>
           <div className="bg-pink-50 px-4 py-2 rounded-lg">
             <span className="text-sm text-gray-600">Active Ladies:</span>
             <span className="ml-2 font-bold text-green-500">
-              {sampleLadies.filter(lady => lady.status === 'active').length}
+              {processedLadies.filter(lady => lady.status === 'active').length}
             </span>
           </div>
         </div>
@@ -152,7 +199,7 @@ export default function ClubLadies() {
           <div className="flex-1">
             <input
               type="text"
-              placeholder="Search by name or nationality..."
+              placeholder="Search by name or username..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
@@ -192,14 +239,14 @@ export default function ClubLadies() {
               Inactive
             </button>
             <button
-              onClick={() => setStatusFilter('pending')}
+              onClick={() => setStatusFilter('suspended')}
               className={`px-4 py-2 rounded-lg transition-colors ${
-                statusFilter === 'pending'
-                  ? 'bg-yellow-500 text-white'
+                statusFilter === 'suspended'
+                  ? 'bg-red-500 text-white'
                   : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
               }`}
             >
-              Pending
+              Suspended
             </button>
           </div>
         </div>
@@ -211,11 +258,20 @@ export default function ClubLadies() {
           <div key={lady.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
             {/* Lady Header */}
             <div className="relative">
-              <img
-                src={lady.imageUrl}
-                alt={lady.name}
-                className="w-full h-64 object-cover"
-              />
+              <div className="w-full h-64 bg-gray-200 flex items-center justify-center">
+                {lady.imageUrl ? (
+                  <img
+                    src={lady.imageUrl}
+                    alt={lady.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="text-gray-400 text-center">
+                    <Camera className="h-12 w-12 mx-auto mb-2" />
+                    <span className="text-sm">No Photo</span>
+                  </div>
+                )}
+              </div>
               <div className="absolute top-4 right-4 flex gap-2">
                 {lady.status === 'active' && (
                   <span className="bg-green-500 text-white px-2 py-1 rounded-full text-sm">
@@ -227,9 +283,9 @@ export default function ClubLadies() {
                     Inactive
                   </span>
                 )}
-                {lady.status === 'pending' && (
-                  <span className="bg-yellow-500 text-white px-2 py-1 rounded-full text-sm">
-                    Pending
+                {lady.status === 'suspended' && (
+                  <span className="bg-red-500 text-white px-2 py-1 rounded-full text-sm">
+                    Suspended
                   </span>
                 )}
                 {lady.isVerified && (
@@ -246,68 +302,51 @@ export default function ClubLadies() {
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">{lady.name}</h3>
                   <div className="text-sm text-gray-500">
-                    {lady.age} years • {lady.nationality}
+                    @{lady.lady?.username}
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    Joined: {new Date(lady.join_date).toLocaleDateString()}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="bg-pink-100 text-pink-800 px-2 py-1 rounded-full text-sm">
-                    {lady.rating} ★
-                  </div>
-                  <div className="bg-pink-100 text-pink-800 px-2 py-1 rounded-full text-sm">
-                    {lady.loves} ❤
+                    {lady.revenue_share_percentage}% split
                   </div>
                 </div>
               </div>
 
-              {/* Stats */}
+              {/* Stats - placeholder for now */}
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className="text-center">
                   <div className="text-sm text-gray-500">Views</div>
-                  <div className="font-semibold">1,234</div>
+                  <div className="font-semibold">-</div>
                 </div>
                 <div className="text-center">
                   <div className="text-sm text-gray-500">Bookings</div>
-                  <div className="font-semibold">56</div>
+                  <div className="font-semibold">-</div>
                 </div>
                 <div className="text-center">
                   <div className="text-sm text-gray-500">Reviews</div>
-                  <div className="font-semibold">12</div>
+                  <div className="font-semibold">-</div>
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Link
-                  to={`/dashboard/club/lady/edit/${lady.id}`}
-                  className="flex-1 bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center justify-center gap-2"
+                  to={`/dashboard/club/lady/edit/${lady.lady_id}`}
+                  className="flex-1 bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center justify-center gap-2 min-w-[80px]"
                 >
                   <Edit className="h-4 w-4" />
                   <span>Edit</span>
                 </Link>
-                <div className="flex-1 flex gap-2">
-                  <Link
-                    to="/dashboard/lady/bump"
-                    className="flex-1 bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <span>Bump</span>
-                  </Link>
-                  <button
-                    onClick={() => {
-                      setSelectedLadyForUpgrade(lady);
-                      setShowUpgradeModal(true);
-                    }}
-                    className="flex-1 bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <span>Upgrade</span>
-                  </button>
-                </div>
                 <button
                   onClick={() => {
                     setSelectedLady(lady);
                     setSelectedStatus(lady.status === 'active' ? 'inactive' : 'active');
                     setShowStatusModal(true);
                   }}
-                  className={`flex-1 px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                  className={`flex-1 px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 min-w-[100px] ${
                     lady.status === 'active'
                       ? 'bg-gray-500 text-white hover:bg-gray-600'
                       : 'bg-green-500 text-white hover:bg-green-600'
@@ -317,7 +356,7 @@ export default function ClubLadies() {
                 </button>
                 <button
                   onClick={() => handleDelete(lady)}
-                  className="flex-1 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2 min-w-[80px]"
                 >
                   <Trash2 className="h-4 w-4" />
                   <span>Remove</span>
@@ -327,6 +366,29 @@ export default function ClubLadies() {
           </div>
         ))}
       </div>
+
+      {/* Empty State */}
+      {filteredLadies.length === 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+          <Users className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No ladies found</h3>
+          <p className="text-gray-500 mb-6">
+            {searchQuery || statusFilter !== 'all' 
+              ? 'Try adjusting your search or filter criteria.'
+              : 'Start by adding your first lady to the club.'
+            }
+          </p>
+          {!searchQuery && statusFilter === 'all' && (
+            <Link
+              to="/dashboard/club/lady/add"
+              className="inline-flex items-center gap-2 bg-pink-500 text-white px-6 py-3 rounded-lg hover:bg-pink-600 transition-colors"
+            >
+              <Plus className="h-5 w-5" />
+              <span>Add Your First Lady</span>
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && selectedLady && (
@@ -343,14 +405,23 @@ export default function ClubLadies() {
                   setSelectedLady(null);
                 }}
                 className="px-4 py-2 text-gray-600 hover:text-gray-900"
+                disabled={isSubmitting}
               >
                 Cancel
               </button>
               <button
                 onClick={confirmDelete}
-                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-2"
               >
-                Remove
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Removing...
+                  </>
+                ) : (
+                  'Remove'
+                )}
               </button>
             </div>
            </div>
@@ -375,23 +446,27 @@ export default function ClubLadies() {
                   setSelectedLady(null);
                 }}
                 className="px-4 py-2 text-gray-600 hover:text-gray-900"
+                disabled={isSubmitting}
               >
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  // Handle status change
-                  console.log('Changing status for', selectedLady.name, 'to', selectedStatus);
-                  setShowStatusModal(false);
-                  setSelectedLady(null);
-                }}
-                className={`px-6 py-2 text-white rounded-lg transition-colors ${
+                onClick={handleStatusChange}
+                disabled={isSubmitting}
+                className={`px-6 py-2 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
                   selectedStatus === 'active'
                     ? 'bg-green-500 hover:bg-green-600'
                     : 'bg-gray-500 hover:bg-gray-600'
                 }`}
               >
-                Confirm
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  'Confirm'
+                )}
               </button>
             </div>
           </div>

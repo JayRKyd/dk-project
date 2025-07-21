@@ -1,16 +1,36 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
   const [credentials, setCredentials] = useState({
     email: '',
     password: '',
   });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { signIn } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = location.state?.from?.pathname || '/';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle login logic here
-    console.log('Login attempt:', credentials);
+    setError('');
+    setLoading(true);
+    
+    try {
+      const { error } = await signIn(credentials.email, credentials.password);
+      if (error) throw error;
+      
+      // Redirect to the page the user was trying to access, or home
+      navigate(from, { replace: true });
+    } catch (error: any) {
+      console.error('Login error:', error);
+      setError(error.message || 'Failed to log in');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -54,8 +74,13 @@ export default function Login() {
                 type="submit"
                 className="bg-pink-500 text-white px-8 py-2 rounded-lg hover:bg-pink-600 transition-colors"
               >
-                Login
+                {loading ? 'Logging in...' : 'Login'}
               </button>
+              {error && (
+                <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg">
+                  {error}
+                </div>
+              )}
             </div>
           </form>
         </div>

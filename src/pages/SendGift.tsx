@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Gift, X, Coins, Heart, ArrowLeft } from 'lucide-react';
+import { Gift, X, Coins, Heart, ArrowLeft, AlertCircle, Loader2 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { clientDashboardService } from '../services/clientDashboardService';
 
 interface GiftOption {
   id: string;
@@ -69,26 +71,76 @@ const giftOptions: GiftOption[] = [
   }
 ];
 
+interface RecipientGift {
+  emoji: string;
+  sender: string;
+  time: string;
+}
+
+interface RecipientProfile {
+  user_id: string;
+  name: string;
+  image_url?: string;
+}
+
 export default function SendGift() {
   const { name } = useParams();
+  const { user } = useAuth();
   const [selectedGifts, setSelectedGifts] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
-  const [selectedReceivedGift, setSelectedReceivedGift] = useState<string | null>(null);
-
-  const receivedGifts = [
-    { emoji: '💎', sender: 'William T.', time: '2 hours ago' },
-    { emoji: '🌹', sender: 'Michael P.', time: '3 hours ago' },
-    { emoji: '👑', sender: 'James R.', time: '5 hours ago' },
-    { emoji: '💝', sender: 'David K.', time: '1 day ago' },
-    { emoji: '🍫', sender: 'Robert S.', time: '1 day ago' }
-  ];
+  
+  // New state for backend integration
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [userCredits, setUserCredits] = useState<number>(0);
+  const [recipientProfile, setRecipientProfile] = useState<RecipientProfile | null>(null);
+  const [recentGifts, setRecentGifts] = useState<RecipientGift[]>([]);
+  const [pageLoading, setPageLoading] = useState(true);
 
   const totalCredits = selectedGifts.reduce((total, giftId) => {
     const gift = giftOptions.find(g => g.id === giftId);
     return total + (gift?.credits || 0);
   }, 0);
+
+  const canAffordGifts = userCredits >= totalCredits;
+
+  // Load initial data
+  useEffect(() => {
+    if (name && user?.id) {
+      loadPageData();
+    }
+  }, [name, user?.id]);
+
+  const loadPageData = async () => {
+    if (!name || !user?.id) return;
+    
+    try {
+      setPageLoading(true);
+      setError(null);
+
+      // Load recipient profile, user credits, and recent gifts in parallel
+      const [recipientData, credits, giftsData] = await Promise.all([
+        clientDashboardService.getRecipientProfile(name),
+        clientDashboardService.getUserCredits(user.id),
+        clientDashboardService.getRecentGiftsReceived(name, 20)
+      ]);
+
+      setRecipientProfile(recipientData);
+      setUserCredits(credits);
+      setRecentGifts(giftsData);
+
+      if (!recipientData) {
+        setError(`Profile "${name}" not found. Please check the name and try again.`);
+      }
+    } catch (err) {
+      console.error('Error loading page data:', err);
+      setError('Unable to load profile information. Please try again.');
+    } finally {
+      setPageLoading(false);
+    }
+  };
 
   const toggleGift = (giftId: string) => {
     setSelectedGifts(prev => 
@@ -98,10 +150,97 @@ export default function SendGift() {
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setShowConfirmation(true);
+    
+    if (!user?.id || !name || !recipientProfile) {
+      setError('Missing required information. Please refresh and try again.');
+      return;
+    }
+
+    if (!canAffordGifts) {
+      setError(`Insufficient credits. You need ${totalCredits} credits but only have ${userCredits}.`);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Prepare gift types for sending
+      const giftTypesToSend = selectedGifts.map(giftId => {
+        const gift = giftOptions.find(g => g.id === giftId)!;
+        return { 
+          type: gift.name, 
+          credits: gift.credits 
+        };
+      });
+
+      // Send the gifts
+      await clientDashboardService.sendGift(
+        user.id,
+        name,
+        giftTypesToSend,
+        message.trim() || undefined
+      );
+
+      // Update user credits after successful send
+      const newCredits = await clientDashboardService.getUserCredits(user.id);
+      setUserCredits(newCredits);
+
+      setShowConfirmation(true);
+    } catch (err) {
+      console.error('Error sending gift:', err);
+      setError(err instanceof Error ? err.message : 'Failed to send gift. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // Loading state
+  if (pageLoading) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-12">
+        <div className="bg-white rounded-xl p-6 shadow-lg">
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-pink-500" />
+            <span className="ml-2 text-gray-600">Loading profile...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error && !recipientProfile) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-12">
+        <div className="bg-white rounded-xl p-6 shadow-lg">
+          <div className="mb-6">
+            <Link
+              to="/ladies"
+              className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 group"
+            >
+              <ArrowLeft className="h-5 w-5 transform group-hover:-translate-x-1 transition-transform" />
+              <span>Back to Ladies</span>
+            </Link>
+          </div>
+          
+          <div className="text-center py-8">
+            <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Profile Not Found</h2>
+            <p className="text-gray-600 mb-6">{error}</p>
+            <Link
+              to="/ladies"
+              className="inline-flex items-center px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
+            >
+              Browse Ladies
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (showConfirmation) {
     return (
@@ -111,15 +250,26 @@ export default function SendGift() {
             <Heart className="h-8 w-8 text-pink-500" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Gift Sent!</h2>
-          <p className="text-gray-600 mb-6">
-            Your gift has been sent to {name}. They will be notified immediately.
+          <p className="text-gray-600 mb-2">
+            Your {selectedGifts.length > 1 ? 'gifts have' : 'gift has'} been sent to {recipientProfile?.name || name}.
           </p>
-          <Link
-            to={`/ladies/pro/${name?.toLowerCase()}`}
-            className="block w-full bg-pink-500 text-white px-6 py-3 rounded-lg hover:bg-pink-600 transition-colors font-medium"
-          >
-            Return to Profile
-          </Link>
+          <p className="text-sm text-gray-500 mb-6">
+            They will be notified immediately and can see your gift on their profile.
+          </p>
+          <div className="space-y-3">
+            <Link
+              to={`/ladies/pro/${name?.toLowerCase()}`}
+              className="block w-full bg-pink-500 text-white px-6 py-3 rounded-lg hover:bg-pink-600 transition-colors font-medium"
+            >
+              Return to Profile
+            </Link>
+            <Link
+              to="/dashboard/gifts"
+              className="block w-full bg-gray-100 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+            >
+              View My Gifts
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -141,67 +291,127 @@ export default function SendGift() {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <img
-              src="https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=150&q=80"
-              alt="Melissa"
+              src={recipientProfile?.image_url || "https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=150&q=80"}
+              alt={recipientProfile?.name || name}
               className="w-16 h-16 rounded-full object-cover ring-4 ring-pink-100"
             />
-            <h1 className="text-2xl font-bold text-gray-900">
-              Send a Gift to <Link to={`/ladies/pro/${name?.toLowerCase()}`} className="text-pink-500">Melissa</Link>
-            </h1>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Send a Gift to <Link to={`/ladies/pro/${name?.toLowerCase()}`} className="text-pink-500">{recipientProfile?.name || name}</Link>
+              </h1>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-sm text-gray-500">Your Credits</div>
+            <div className="flex items-center gap-1 text-lg font-semibold text-pink-600">
+              <Coins className="h-5 w-5" />
+              <span>{userCredits}</span>
+            </div>
           </div>
         </div>
 
-        {/* Received Gifts */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Last 20 Recent Gifts</h2>
-          </div>
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {receivedGifts.map((gift, index) => (
-              <button
-                key={index}
-                className="relative group flex flex-col items-center"
-              >
-                <div className="w-12 h-12 bg-pink-50 rounded-full flex items-center justify-center text-2xl hover:bg-pink-100 transition-colors">
-                  {gift.emoji}
+        {/* Recent Gifts */}
+        {recentGifts.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Recent Gifts Received</h2>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {recentGifts.map((gift, index) => (
+                <div
+                  key={index}
+                  className="flex flex-col items-center min-w-[80px]"
+                >
+                  <div className="w-12 h-12 bg-pink-50 rounded-full flex items-center justify-center text-2xl mb-2">
+                    {gift.emoji}
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-gray-900 truncate max-w-[70px]">{gift.sender}</p>
+                    <p className="text-xs text-gray-500">{gift.time}</p>
+                  </div>
                 </div>
-                <div className="mt-2 text-center">
-                  <p className="text-sm font-medium text-gray-900">{gift.sender}</p>
-                  <p className="text-xs text-gray-500">{gift.time}</p>
-                </div>
-              </button>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-8">
+          {/* Error Display */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-500 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-red-800">Unable to send gift</h3>
+                  <p className="text-sm text-red-700 mt-1">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Credit Warning */}
+          {totalCredits > 0 && !canAffordGifts && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-amber-800">Insufficient Credits</h3>
+                  <p className="text-sm text-amber-700 mt-1">
+                    You need {totalCredits} credits but only have {userCredits}. 
+                    <Link to="/dashboard/credits" className="font-medium underline ml-1">
+                      Purchase more credits
+                    </Link>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Gift Selection */}
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Choose a Gift</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {giftOptions.map((gift) => (
-                <button
-                  key={gift.id}
-                  type="button"
-                  onClick={() => toggleGift(gift.id)}
-                  className={`p-4 rounded-xl text-center transition-all ${
-                    selectedGifts.includes(gift.id)
-                      ? 'bg-pink-500 text-white shadow-lg scale-105'
-                      : 'bg-pink-50 hover:bg-pink-100'
-                  }`}
-                >
-                  <div className="text-4xl mb-2">{gift.emoji}</div>
-                  <div className="font-medium">{gift.name}</div>
-                  <div className="text-sm mt-1 flex items-center justify-center gap-1">
-                    <Coins className="h-4 w-4" />
-                    <span>{gift.credits} DK Credits</span>
-                  </div>
-                  <div className={`text-xs mt-2 ${
-                    selectedGifts.includes(gift.id) ? 'text-pink-100' : 'text-gray-500'
-                  }`}>
-                    {gift.description}
-                  </div>
-                </button>
-              ))}
+              {giftOptions.map((gift) => {
+                const isSelected = selectedGifts.includes(gift.id);
+                const canAffordThisGift = userCredits >= gift.credits;
+                
+                return (
+                  <button
+                    key={gift.id}
+                    type="button"
+                    onClick={() => canAffordThisGift && toggleGift(gift.id)}
+                    disabled={!canAffordThisGift}
+                    className={`p-4 rounded-xl text-center transition-all ${
+                      isSelected
+                        ? 'bg-pink-500 text-white shadow-lg scale-105'
+                        : canAffordThisGift
+                        ? 'bg-pink-50 hover:bg-pink-100'
+                        : 'bg-gray-50 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="text-4xl mb-2">{gift.emoji}</div>
+                    <div className="font-medium">{gift.name}</div>
+                    <div className="text-sm mt-1 flex items-center justify-center gap-1">
+                      <Coins className="h-4 w-4" />
+                      <span>{gift.credits} DK Credits</span>
+                    </div>
+                    <div className={`text-xs mt-2 ${
+                      isSelected 
+                        ? 'text-pink-100' 
+                        : canAffordThisGift 
+                        ? 'text-gray-500'
+                        : 'text-gray-400'
+                    }`}>
+                      {gift.description}
+                    </div>
+                    {!canAffordThisGift && (
+                      <div className="text-xs mt-1 text-red-500 font-medium">
+                        Insufficient credits
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -216,7 +426,11 @@ export default function SendGift() {
               rows={4}
               className="w-full px-4 py-2 border border-pink-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent bg-pink-50"
               placeholder="Write a sweet message..."
+              maxLength={500}
             />
+            <div className="text-xs text-gray-500 mt-1">
+              {message.length}/500 characters
+            </div>
           </div>
 
           {/* Summary */}
@@ -239,8 +453,14 @@ export default function SendGift() {
                 <div className="border-t pt-2 mt-2"></div>
                 <div className="flex justify-between items-center">
                   <span className="font-medium">Total Cost</span>
-                  <span className="font-medium text-pink-500">
+                  <span className={`font-medium ${canAffordGifts ? 'text-pink-500' : 'text-red-500'}`}>
                     {totalCredits} DK Credits
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span>Your Balance</span>
+                  <span className={userCredits >= totalCredits ? 'text-green-600' : 'text-red-500'}>
+                    {userCredits} DK Credits
                   </span>
                 </div>
               </div>
@@ -265,12 +485,21 @@ export default function SendGift() {
           {/* Submit Button */}
           <button
             type="submit"
-            className={`w-full bg-[#E91E63] text-white py-3 rounded-lg font-medium text-lg hover:bg-[#D81B60] transition-colors ${
-              (selectedGifts.length === 0 || !confirmSend) && 'opacity-50 cursor-not-allowed'
+            className={`w-full py-3 rounded-lg font-medium text-lg transition-colors flex items-center justify-center gap-2 ${
+              (selectedGifts.length === 0 || !confirmSend || !canAffordGifts || loading)
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-[#E91E63] text-white hover:bg-[#D81B60]'
             }`}
-            disabled={selectedGifts.length === 0 || !confirmSend}
+            disabled={selectedGifts.length === 0 || !confirmSend || !canAffordGifts || loading}
           >
-            Confirm Send Gift
+            {loading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Sending Gift...
+              </>
+            ) : (
+              'Confirm Send Gift'
+            )}
           </button>
           <p className="text-sm text-gray-500 text-center">
             By sending a gift you agree to our{' '}
