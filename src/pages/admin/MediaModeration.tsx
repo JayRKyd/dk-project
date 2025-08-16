@@ -6,6 +6,7 @@ import { Image, Video, AlertCircle, CheckCircle, Trash2, Eye, EyeOff } from 'luc
 
 const MediaModeration: React.FC = () => {
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [summary, setSummary] = useState<{ user_id: string; username: string; count: number; latest_created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState({
@@ -22,10 +23,12 @@ const MediaModeration: React.FC = () => {
 
   const loadMediaItems = async () => {
     setLoading(true);
-    const { items, error } = await ContentModerationService.getMediaItems(page, 20, filters);
-    if (!error && items) {
-      setMediaItems(items);
-    }
+    const [{ items }, summaryResp] = await Promise.all([
+      ContentModerationService.getMediaItems(page, 20, filters),
+      ContentModerationService.getMediaSummaryByUser(page, 25, { media_type: filters.media_type, moderation_status: filters.moderation_status })
+    ]);
+    setMediaItems(items || []);
+    if (!summaryResp.error) setSummary(summaryResp.rows);
     setLoading(false);
   };
 
@@ -104,62 +107,72 @@ const MediaModeration: React.FC = () => {
           </div>
         </div>
 
-        {/* Media Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {mediaItems.map(item => (
-            <div
-              key={item.id}
-              className="bg-white rounded-lg shadow overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-              onClick={() => setSelectedItem(item)}
-            >
-              {/* Media Preview */}
-              <div className="aspect-video bg-gray-100 relative">
-                {item.media_type === 'image' ? (
-                  <img
-                    src={item.url}
-                    alt="Media content"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <video
-                    src={item.url}
-                    className="w-full h-full object-cover"
-                    controls
-                  />
+        {/* Summary by User (lightweight) */}
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Uploads by User</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr className="text-left text-sm text-gray-600">
+                  <th className="py-2 px-3">User</th>
+                  <th className="py-2 px-3">Total Media</th>
+                  <th className="py-2 px-3">Latest Upload</th>
+                  <th className="py-2 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.map(row => (
+                  <tr key={row.user_id} className="border-t">
+                    <td className="py-2 px-3">{row.username} <span className="text-xs text-gray-500">({row.user_id.slice(0,8)})</span></td>
+                    <td className="py-2 px-3">{row.count}</td>
+                    <td className="py-2 px-3">{format(new Date(row.latest_created_at), 'PP p')}</td>
+                    <td className="py-2 px-3 text-right">
+                      <button
+                        className="text-pink-600 hover:underline"
+                        onClick={async () => {
+                          setLoading(true);
+                          const { items } = await ContentModerationService.getMediaItems(1, 12, { ...filters, user_id: row.user_id });
+                          setMediaItems(items);
+                          setLoading(false);
+                        }}
+                      >
+                        View latest
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {summary.length === 0 && (
+                  <tr><td colSpan={4} className="py-6 text-gray-500">No uploads found</td></tr>
                 )}
-                <div className="absolute top-2 right-2 flex space-x-2">
-                  {item.status === 'hidden' && (
-                    <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded">
-                      Hidden
-                    </span>
-                  )}
-                  {item.moderation_status === 'rejected' && (
-                    <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">
-                      Rejected
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Media Info */}
-              <div className="p-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  {item.media_type === 'image' ? (
-                    <Image className="w-4 h-4" />
-                  ) : (
-                    <Video className="w-4 h-4" />
-                  )}
-                  <span className="text-sm font-medium">
-                    {item.media_type.charAt(0).toUpperCase() + item.media_type.slice(1)}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-600">
-                  Uploaded: {format(new Date(item.created_at), 'PPp')}
-                </p>
-              </div>
-            </div>
-          ))}
+              </tbody>
+            </table>
+          </div>
         </div>
+
+        {/* Optional lightweight media preview (only when viewing specific user) */}
+        {mediaItems.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {mediaItems.map(item => (
+              <div key={item.id} className="bg-white rounded-lg shadow overflow-hidden cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setSelectedItem(item)}>
+                <div className="aspect-video bg-gray-100 relative">
+                  {item.media_type === 'image' ? (
+                    <img src={item.url} alt="Media content" className="w-full h-full object-cover" />
+                  ) : (
+                    <video src={item.url} className="w-full h-full object-cover" controls />
+                  )}
+                  <div className="absolute top-2 right-2 flex space-x-2">
+                    {item.status === 'hidden' && (<span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded">Hidden</span>)}
+                    {item.moderation_status === 'rejected' && (<span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Rejected</span>)}
+                  </div>
+                </div>
+                <div className="p-4">
+                  <div className="flex items-center space-x-2 mb-2">{item.media_type === 'image' ? (<Image className="w-4 h-4" />) : (<Video className="w-4 h-4" />)}<span className="text-sm font-medium">{item.media_type.charAt(0).toUpperCase() + item.media_type.slice(1)}</span></div>
+                  <p className="text-sm text-gray-600">Uploaded: {format(new Date(item.created_at), 'PPp')}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Pagination */}
         <div className="mt-8 flex justify-between">

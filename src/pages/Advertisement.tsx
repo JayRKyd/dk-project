@@ -1,19 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Phone, MessageCircle, MapPin, X, ChevronLeft, ChevronRight, Star, Eye } from 'lucide-react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Phone, MessageCircle, MapPin, X, ChevronLeft, ChevronRight, Star } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
 import ReviewCard from '../components/ReviewCard';
 import { profileService, ProfileData } from '../services/profileService';
+import { useAuth } from '../contexts/AuthContext';
 
-// Default fallback data in case API fails
-const defaultImages = [
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1604004555489-723a93d6ce74?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1524250502761-1ac6f2e30d43?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1622396481328-7d0cd0e7b35d?auto=format&fit=crop&w=800&q=80'
-];
+// No stock defaults; show empty state when user has no photos
 
 export default function Advertisement() {
   const { id } = useParams<{ id: string }>();
@@ -38,6 +30,12 @@ export default function Advertisement() {
         const data = await profileService.getProfileBySlug(id);
         
         if (data) {
+          // Guard: hide blocked/suspended profiles entirely
+          if ((data as any).users?.is_blocked === true || (data as any).is_blocked === true) {
+            setError('This profile is unavailable.');
+            setProfileData(null);
+            return;
+          }
           setProfileData(data);
         } else {
           setError('Profile not found');
@@ -53,8 +51,8 @@ export default function Advertisement() {
     fetchProfileData();
   }, [id]);
 
-  // Use profile data or fallback to defaults
-  const images = profileData?.images?.length ? profileData.images : defaultImages;
+  // Use real images; if none, show an empty-state section instead of stock defaults
+  const images = profileData?.images && profileData.images.length > 0 ? profileData.images : [];
   const services = profileData?.services || [];
   
   // Transform reviews to match ReviewCard interface
@@ -139,19 +137,25 @@ export default function Advertisement() {
       {/* Photo Gallery */}
       <div className="relative bg-gray-900">
         {/* Photo Bar */}
-        <div className="flex h-[600px] transition-transform duration-300 ease-in-out"
-             style={{ transform: `translateX(-${selectedImage * 25}%)` }}>
-          {images.map((image, index) => (
-            <div key={index} className="flex-none w-1/4 relative">
-              <img
-                src={image}
-                alt={`Alexandra ${index + 1}`}
-                className="w-full h-full object-cover cursor-pointer"
-                onClick={() => openFullscreen(index)}
-              />
-            </div>
-          ))}
-        </div>
+        {images.length > 0 ? (
+          <div className="flex h-[600px] transition-transform duration-300 ease-in-out"
+               style={{ transform: `translateX(-${selectedImage * 25}%)` }}>
+            {images.map((image, index) => (
+              <div key={index} className="flex-none w-1/4 relative">
+                <img
+                  src={image}
+                  alt={`Photo ${index + 1}`}
+                  className="w-full h-full object-cover cursor-pointer"
+                  onClick={() => openFullscreen(index)}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="h-[300px] flex items-center justify-center text-gray-300">
+            No photos uploaded yet
+          </div>
+        )}
 
         {/* Navigation Arrows */}
         <button
@@ -203,9 +207,11 @@ export default function Advertisement() {
             </button>
 
             {/* Photo Counter */}
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white bg-black/50 px-4 py-2 rounded-full">
-              {fullscreenImage + 1} / {images.length}
-            </div>
+            {images.length > 0 && (
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white bg-black/50 px-4 py-2 rounded-full">
+                {fullscreenImage + 1} / {images.length}
+              </div>
+            )}
 
             {/* Watermark */}
             <div className="absolute bottom-4 right-4 pointer-events-none select-none">
@@ -215,11 +221,13 @@ export default function Advertisement() {
             </div>
 
             {/* Main Image */}
-            <img
-              src={images[fullscreenImage]}
-              alt={`Alexandra ${fullscreenImage + 1}`}
-              className="max-h-screen max-w-screen object-contain relative"
-            />
+            {images.length > 0 && fullscreenImage !== null && (
+              <img
+                src={images[fullscreenImage]}
+                alt={`Photo ${fullscreenImage + 1}`}
+                className="max-h-screen max-w-screen object-contain relative"
+              />
+            )}
           </div>
         )}
       </div>
@@ -304,7 +312,7 @@ export default function Advertisement() {
                 {services.length > 0 ? (
                   <>
                     <div>
-                      {services.slice(0, Math.ceil(services.length / 2)).map((service, index) => (
+                      {services.slice(0, Math.ceil(services.length / 2)).map((service) => (
                         <div key={service.id} className="flex justify-between items-center">
                           <span className="text-pink-500">{service.service_name}</span>
                           <span className="text-gray-700">
@@ -314,7 +322,7 @@ export default function Advertisement() {
                       ))}
                     </div>
                     <div>
-                      {services.slice(Math.ceil(services.length / 2)).map((service, index) => (
+                      {services.slice(Math.ceil(services.length / 2)).map((service) => (
                         <div key={service.id} className="flex justify-between items-center">
                           <span className="text-pink-500">{service.service_name}</span>
                           <span className="text-gray-700">
@@ -336,13 +344,10 @@ export default function Advertisement() {
             <div className="mt-12">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Reviews</h2>
-                <Link
-                  to="/write-review/alexandra"
-                  className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
-                >
-                  <Star className="h-5 w-5" />
-                  Write Review
-                </Link>
+                {/* Only clients can write a review. Show disabled button for others. */}
+                {profileData ? (
+                  <RoleAwareWriteReviewButton ladyId={profileData.id} />
+                ) : null}
               </div>
               <div className="space-y-6">
                 {reviews.map((review) => (
@@ -464,5 +469,36 @@ export default function Advertisement() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Small helper component: shows active button for clients, disabled for others
+function RoleAwareWriteReviewButton({ ladyId }: { ladyId: string }) {
+  const { user } = useAuth();
+  const role = (user?.user_metadata?.role || '').toLowerCase();
+
+  if (role === 'client') {
+    return (
+      <Link
+        to={`/write-review/${ladyId}`}
+        className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
+      >
+        <Star className="h-5 w-5" />
+        Write Review
+      </Link>
+    );
+  }
+
+  // Non-clients (ladies, clubs, guests): show disabled button
+  return (
+    <button
+      type="button"
+      disabled
+      title="Only clients can write reviews"
+      className="px-6 py-2 rounded-lg bg-gray-200 text-gray-500 cursor-not-allowed flex items-center gap-2"
+    >
+      <Star className="h-5 w-5" />
+      Write Review
+    </button>
   );
 }

@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   ArrowLeft,
   Coins,
-  DollarSign,
-  Calculator,
+  
   ShieldCheck,
   CreditCard,
   Wallet,
@@ -117,8 +116,8 @@ export default function ClientCredits() {
         quantity
       }));
       
-      // Simulate the purchase (placeholder until payment integration)
-      const result = await clientDashboardService.simulateCreditPurchase(
+      // Complete purchase without Stripe (records credits and transactions)
+      const result = await clientDashboardService.completeCreditPurchase(
         user.id,
         packages,
         totals.credits,
@@ -132,7 +131,7 @@ export default function ClientCredits() {
         await loadData();
         alert('Credits purchased successfully!');
       } else {
-        alert(result.message || 'Purchase failed. Please try again.');
+        alert('Purchase failed. Please try again.');
       }
     } catch (err: any) {
       console.error('Error processing purchase:', err);
@@ -142,10 +141,7 @@ export default function ClientCredits() {
     }
   };
 
-  const formatTransactionDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  // Format helper not used in compact list
 
   const getTransactionIcon = (type: CreditTransaction['type']) => {
     switch (type) {

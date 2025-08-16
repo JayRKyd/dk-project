@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Key, XCircle, AlertTriangle, Shield } from 'lucide-react';
 import { useUserProfile } from '../../hooks/useUserProfile';
 import { supabase } from '../../lib/supabase';
-import { getUserMembershipTier } from '../../utils/authUtils';
+// import { getUserMembershipTier } from '../../utils/authUtils';
 
 export default function AccountSettings() {
   const { profile, loading } = useUserProfile();
@@ -25,6 +25,29 @@ export default function AccountSettings() {
   // Get user's membership tier
   const userTier = profile?.membership_tier || 'FREE';
   const isProOrHigher = userTier === 'PRO' || userTier === 'PRO-PLUS' || userTier === 'ULTRA';
+
+  const [hideListingCard, setHideListingCard] = useState<boolean>(Boolean((profile as any)?.hide_listing_card));
+  const [hideFanPosts, setHideFanPosts] = useState<boolean>(Boolean((profile as any)?.hide_fan_posts));
+  const [hideReviews, setHideReviews] = useState<boolean>(Boolean((profile as any)?.hide_reviews));
+
+  const saveVisibility = async (updates: Partial<{ hide_listing_card: boolean; hide_fan_posts: boolean; hide_reviews: boolean }>) => {
+    if (!profile?.id) return;
+    setIsUpdating(true);
+    setUpdateMessage({ text: '', type: null });
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', profile.id);
+      if (error) throw error;
+      setUpdateMessage({ text: 'Settings saved', type: 'success' });
+    } catch (e) {
+      console.error('Failed saving visibility flags', e);
+      setUpdateMessage({ text: 'Failed to save settings', type: 'error' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,10 +136,25 @@ export default function AccountSettings() {
     }
   };
 
-  const handleAccountDelete = (e: React.FormEvent) => {
+  const handleAccountDelete = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle account deletion logic here
-    console.log('Account deletion confirmed');
+    setIsUpdating(true);
+    setUpdateMessage({ text: '', type: null });
+
+    try {
+      // Call RPC to delete app data for the current user (profiles, users)
+      const { error } = await supabase.rpc('close_account_soft_delete');
+      if (error) throw error;
+
+      // Sign out and redirect
+      await supabase.auth.signOut();
+      window.location.href = '/';
+    } catch (err) {
+      console.error('Error closing account:', err);
+      setUpdateMessage({ text: 'Failed to close account. Please try again.', type: 'error' });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   return (
@@ -393,6 +431,12 @@ export default function AccountSettings() {
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={hideListingCard}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setHideListingCard(val);
+                    saveVisibility({ hide_listing_card: val });
+                  }}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pink-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-500"></div>
@@ -408,6 +452,12 @@ export default function AccountSettings() {
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={hideFanPosts}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setHideFanPosts(val);
+                    saveVisibility({ hide_fan_posts: val });
+                  }}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pink-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-500"></div>
@@ -423,6 +473,12 @@ export default function AccountSettings() {
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={hideReviews}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setHideReviews(val);
+                    saveVisibility({ hide_reviews: val });
+                  }}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pink-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-500"></div>
@@ -440,7 +496,7 @@ export default function AccountSettings() {
                 These advanced settings are available for PRO, PRO-PLUS, and ULTRA members.
               </p>
               <Link
-                to="/dashboard/lady/upgrade-membership"
+                to="/dashboard/lady/upgrade/membership"
                 className="inline-flex items-center px-6 py-3 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors font-medium"
               >
                 Upgrade to PRO

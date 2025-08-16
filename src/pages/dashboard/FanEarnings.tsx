@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   ArrowLeft,
@@ -12,6 +12,8 @@ import {
   MessageCircle,
   Coins
 } from 'lucide-react';
+import { fanPostsService } from '../../services/fanPostsService';
+import { useUserProfile } from '../../hooks/useUserProfile';
 
 interface Earning {
   id: string;
@@ -27,34 +29,8 @@ interface Earning {
   time: string;
 }
 
-const earnings: Earning[] = [
-  {
-    id: '1',
-    type: 'unlock',
-    fan: {
-      name: 'William T.',
-      imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80'
-    },
-    amount: 10,
-    description: 'Unlocked your latest fan post',
-    hasComment: true,
-    date: '2024-01-12',
-    time: '15:30'
-  },
-  {
-    id: '4',
-    type: 'unlock',
-    fan: {
-      name: 'David K.',
-      imageUrl: 'https://images.unsplash.com/photo-1463453091185-61582044d556?auto=format&fit=crop&w=150&q=80'
-    },
-    amount: 10,
-    description: 'Unlocked your fan post',
-    hasComment: false,
-    date: '2024-01-11',
-    time: '14:15'
-  }
-];
+// No static data; will load from Supabase via service
+const earningsStatic: Earning[] = [];
 
 // Group earnings by date
 const groupEarningsByDate = (earnings: Earning[]) => {
@@ -99,13 +75,32 @@ const getEarningColor = (type: Earning['type']) => {
 };
 
 export default function FanEarnings() {
+  const { user } = useUserProfile();
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  
-  // Calculate total earnings
-  const totalEarnings = earnings.reduce((sum, earning) => sum + earning.amount, 0);
+  const [earnings, setEarnings] = useState<Earning[]>(earningsStatic);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const groupedEarnings = groupEarningsByDate(earnings);
-  const dates = Object.keys(groupedEarnings).sort().reverse();
+  useEffect(() => {
+    const load = async () => {
+      try {
+        if (!user) return;
+        const rows = await fanPostsService.getLadyFanEarnings(user.id);
+        setEarnings(rows as Earning[]);
+        // Set selected date to most recent entry if exists
+        if (rows.length > 0) {
+          setSelectedDate(rows[0].date);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user?.id]);
+
+  const totalEarnings = useMemo(() => earnings.reduce((sum, e) => sum + e.amount, 0), [earnings]);
+
+  const groupedEarnings = useMemo(() => groupEarningsByDate(earnings), [earnings]);
+  const dates = useMemo(() => Object.keys(groupedEarnings).sort().reverse(), [groupedEarnings]);
 
   const navigateDate = (direction: 'prev' | 'next') => {
     const currentIndex = dates.indexOf(selectedDate);
@@ -141,7 +136,7 @@ export default function FanEarnings() {
           </div>
           <div className="flex items-center gap-2 bg-pink-500 text-white px-4 py-2 rounded-full">
             <Coins className="h-5 w-5" />
-            <span className="font-medium">{earnings.length} Transactions</span>
+            <span className="font-medium">{loading ? '...' : earnings.length} Transactions</span>
           </div>
         </div>
       </div>
@@ -175,7 +170,7 @@ export default function FanEarnings() {
 
         {/* Date Quick Select */}
         <div className="mt-6 flex gap-2 overflow-x-auto pb-2">
-          {dates.map((date) => (
+           {dates.map((date) => (
             <button
               key={date}
               onClick={() => setSelectedDate(date)}
@@ -215,12 +210,7 @@ export default function FanEarnings() {
                         <div className="text-sm text-gray-500">
                           {earning.description}
                         </div>
-                        {earning.hasComment && (
-                          <div className="text-sm text-pink-500 mt-1">
-                            <MessageCircle className="h-4 w-4 inline-block mr-1" />
-                            Left a comment
-                          </div>
-                        )}
+                        {/* Comments indicator not wired yet */}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -240,12 +230,15 @@ export default function FanEarnings() {
         </div>
 
         {/* No Earnings Message */}
-        {(!groupedEarnings[selectedDate] || groupedEarnings[selectedDate].length === 0) && (
+        {(!loading && (!groupedEarnings[selectedDate] || groupedEarnings[selectedDate].length === 0)) && (
           <div className="text-center py-12">
             <div className="text-4xl mb-4">💰</div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">No earnings on this date</h3>
             <p className="text-gray-500">Check other dates or create more fan posts to get unlocks</p>
           </div>
+        )}
+        {loading && (
+          <div className="text-center py-12 text-gray-500">Loading...</div>
         )}
       </div>
     </div>

@@ -1,95 +1,59 @@
-import React, { useState } from 'react';
-import { Phone, MessageCircle, MapPin, X, ChevronLeft, ChevronRight, Star, Eye, Heart, Shield, Clock, Calendar, Lock, Camera, Gift } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Phone, MessageCircle, MapPin, X, ChevronLeft, ChevronRight, Star, Heart, Lock, Camera, Gift } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
 import ReviewCard from '../components/ReviewCard';
-
-const images = [
-  'https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1604004555489-723a93d6ce74?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1524250502761-1ac6f2e30d43?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80'
-];
-
-const services = [
-  { name: 'Service for Men', price: '€50' },
-  { name: 'Service for Ladies', price: '€80' },
-  { name: 'Girlfriend Experience', price: '€100' },
-  { name: 'Striptease', price: '€70' },
-  { name: 'Fingering', price: '€50' },
-  { name: 'Handjob', price: '€50' },
-  { name: 'Kissing', price: '€30' },
-  { name: 'French kissing', price: '€40' },
-  { name: 'Pussy licking', price: '€60' },
-  { name: 'Rimming (rec)', price: '€80' },
-  { name: 'Rimming (client)', price: '€80' },
-  { name: 'Blowjob with condom', price: '€60' },
-  { name: 'Blowjob without condom', price: '€80' },
-  { name: 'Deep Throat', price: '€90' },
-  { name: 'Sex with condom', price: '€100' },
-  { name: 'Sex without condom', price: '€150' },
-  { name: 'Relaxing Massage', price: '€60' },
-  { name: 'Erotic Massage', price: '€80' },
-  { name: 'Anal Massage', price: '€90' },
-  { name: 'Dildo (rec)', price: '€70' },
-  { name: 'Dildo (client)', price: '€70' },
-  { name: 'Trio MFF', price: '€200' },
-  { name: 'Trio MMF', price: '€200' },
-  { name: 'Groupsex', price: '€250' },
-  { name: 'Photos', price: '€100' },
-  { name: 'Video', price: '€150' },
-  { name: 'High Heels', price: '€20' },
-  { name: 'Role Play', price: '€100' },
-  { name: 'Soft SM', price: '€120' },
-  { name: 'BDSM', price: '€150' },
-  { name: 'Golden Shower (rec)', price: '€100' },
-  { name: 'Golden Shower (client)', price: '€100' },
-];
-
-const reviews = [
-  {
-    id: '1',
-    authorName: 'Mike van Delden',
-    serviceName: 'Alexandra',
-    serviceLink: '/ladies/alexandra',
-    date: 'September 2020',
-    rating: 8.0,
-    positives: [
-      'Ordered Alexandra. Communication was good by telephone.',
-      'After 1 hour Alexandra arrived, she is great! What a beauty!'
-    ],
-    negatives: [
-      '30 minutes went too quick! I recommend staying longer if you can afford it!'
-    ],
-    reply: {
-      from: 'Alexandra',
-      message: 'Thank you for the review. I hope to see you again soon! Kiss!'
-    },
-    likes: 10,
-    dislikes: 0
-  },
-  {
-    id: '2',
-    authorName: 'NeverWalkAlone',
-    serviceName: 'Alexandra',
-    serviceLink: '/ladies/alexandra',
-    date: 'August 2020',
-    rating: 9.0,
-    positives: [
-      'Very beautiful girl',
-      'Great service, took her time',
-      'Speaks good English'
-    ],
-    negatives: [],
-    likes: 8,
-    dislikes: 0
-  }
-];
+import { profileService, type ProfileData } from '../services/profileService';
+import { useAuth } from '../contexts/AuthContext';
 
 function AdvertisementPro() {
+  const { id } = useParams<{ id: string }>();
   const [selectedImage, setSelectedImage] = useState(0);
   const [fullscreenImage, setFullscreenImage] = useState<number | null>(null);
   const [showPhone, setShowPhone] = useState(false);
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!id) {
+        setError('No profile ID provided');
+        setLoading(false);
+        return;
+      }
+      try {
+        setLoading(true);
+        const data = await profileService.getProfileBySlug(id);
+        if (!data) {
+          setError('Profile not found');
+        }
+        setProfileData(data);
+      } catch (e) {
+        console.error('Failed to load PRO profile:', e);
+        setError('Failed to load profile');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [id]);
+
+  const images = useMemo(() => profileData?.images || [], [profileData]);
+  const services = useMemo(() => profileData?.services || [], [profileData]);
+  const rates = useMemo(() => profileData?.rates || [], [profileData]);
+  const reviews = useMemo(() => (profileData?.reviews || []).map(r => ({
+    id: r.id,
+    authorName: 'Anonymous',
+    serviceName: profileData?.name || 'Unknown',
+    serviceLink: `/ladies/${profileData?.id ?? ''}`,
+    date: r.created_at,
+    rating: r.rating,
+    positives: r.positives || [],
+    negatives: r.negatives || [],
+    reply: undefined,
+    likes: r.likes,
+    dislikes: r.dislikes
+  })), [profileData]);
 
   const openFullscreen = (index: number) => {
     setFullscreenImage(index);
@@ -111,24 +75,64 @@ function AdvertisementPro() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-pink-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-red-600 mb-4">Error</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Link to="/ladies" className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600">Back to Ladies</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profileData) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-600 mb-4">Profile Not Found</h2>
+          <Link to="/ladies" className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600">Back to Ladies</Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Photo Gallery */}
       <div className="relative bg-gray-900">
         {/* Photo Bar */}
-        <div className="flex h-[600px] transition-transform duration-300 ease-in-out"
-             style={{ transform: `translateX(-${selectedImage * 25}%)` }}>
-          {images.map((image, index) => (
-            <div key={index} className="flex-none w-1/4 relative">
-              <img
-                src={image}
-                alt={`Melissa ${index + 1}`}
-                className="w-full h-full object-cover cursor-pointer"
-                onClick={() => openFullscreen(index)}
-              />
-            </div>
-          ))}
-        </div>
+        {images.length > 0 ? (
+          <div className="flex h-[600px] transition-transform duration-300 ease-in-out"
+               style={{ transform: `translateX(-${selectedImage * 25}%)` }}>
+            {images.map((image, index) => (
+              <div key={index} className="flex-none w-1/4 relative">
+                <img
+                  src={image}
+                  alt={`Photo ${index + 1}`}
+                  className="w-full h-full object-cover cursor-pointer"
+                  onClick={() => openFullscreen(index)}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="h-[300px] flex items-center justify-center text-gray-300">
+            No photos uploaded yet
+          </div>
+        )}
 
         {/* Navigation Arrows */}
         <button
@@ -146,23 +150,20 @@ function AdvertisementPro() {
 
         {/* Profile Info - Centered at bottom */}
         <div className="absolute bottom-0 left-[calc(16.666667%+1rem)] z-10 flex items-center gap-3 bg-gradient-to-t from-black/60 to-transparent w-full py-6">
-          <Link
-            to="/dashboard/lady"
-            className="bg-pink-500 text-white px-6 py-2 rounded-full text-2xl font-bold shadow-lg hover:bg-pink-600 transition-colors"
-          >
-            Melissa
-          </Link>
-          <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">9.5 ★</span>
-          <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">2,258 ❤</span>
+          <span className="bg-pink-500 text-white px-6 py-2 rounded-full text-2xl font-bold shadow-lg">{profileData.name}</span>
+          <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">{profileData.rating} ★</span>
+          <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">{profileData.loves} ❤</span>
           <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg flex items-center gap-2">
-            <span>3</span>
+            <span>{images.length}</span>
             <Camera className="h-5 w-5" />
           </span>
           <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg flex items-center gap-2">
-            <span>156</span>
+            <span>{reviews.length}</span>
             <Gift className="h-5 w-5" />
           </span>
-          <span className="bg-green-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">Verified! ✓</span>
+          {profileData.is_verified && (
+            <span className="bg-green-500 text-white px-4 py-2 rounded-full text-lg shadow-lg">Verified! ✓</span>
+          )}
         </div>
 
         {/* Fullscreen Photo Viewer */}
@@ -222,8 +223,7 @@ function AdvertisementPro() {
             <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
               <h2 className="text-2xl font-bold mb-4">About me</h2>
               <div className="space-y-4 text-gray-700">
-                <p>Hi, I'm Melissa! It's great that you're visiting my page. I love going out and I'm looking for fun partners to enjoy some time together. Feel free to contact me and set up an appointment, I'm waiting for you! 😊</p>
-                <p>I also post new <Link to="/fan-posts/melissa" className="text-pink-500 hover:text-pink-600">Fan Posts</Link> almost every day, so make sure you don't miss them! I hope you'll enjoy them. See you soon!</p>
+                <p>{profileData.description || 'No description provided.'}</p>
               </div>
             </div>
 
@@ -233,12 +233,12 @@ function AdvertisementPro() {
                 <div className="flex items-center gap-3">
                   <h2 className="text-2xl font-bold">Fan Posts</h2>
                   <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-lg shadow-lg flex items-center gap-2">
-                    <span>3</span>
+                    <span>{images.length}</span>
                     <Camera className="h-5 w-5" />
                   </span>
                 </div>
                 <Link
-                  to="/fan-posts/melissa"
+                  to={`/fan-posts/${(profileData.name || 'me').toLowerCase()}`}
                   className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
                 >
                   Go to my Fan Posts
@@ -246,23 +246,19 @@ function AdvertisementPro() {
               </div>
               <div className="space-y-4">
                 <p className="text-gray-600">
-                  Subscribe to see my exclusive content and daily updates. I post new photos and videos almost every day!
+                  Subscribe to see exclusive content and updates.
                 </p>
                 
                 {/* Latest Fan Post */}
                 <div className="mt-6 bg-pink-50 rounded-lg overflow-hidden">
                   <div className="p-4 flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <img
-                        src="https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=150&q=80"
-                        alt="Melissa"
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
+                      <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
+                        {profileData.name?.[0] || 'L'}
+                      </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">Melissa</span>
-                          <span className="text-gray-400">•</span>
-                          <span className="text-sm text-gray-500">2 hours ago</span>
+                          <span className="font-medium text-gray-900">{profileData.name}</span>
                         </div>
                       </div>
                     </div>
@@ -273,37 +269,8 @@ function AdvertisementPro() {
                       </button>
                     </div>
                   </div>
-                  
                   <div className="px-4 pb-3">
-                    <p className="text-gray-700">Special content for my premium subscribers 💋</p>
-                    <p className="text-gray-700">Theme: Naughty</p>
-                    <p className="text-gray-700">5 Photos + 1 Fan Video</p>
-                  </div>
-                  
-                  <div className="relative">
-                    <img
-                      src="https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=800&q=80"
-                      alt="Post content"
-                      className="w-full h-48 object-cover blur-[8px]"
-                    />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <div className="bg-black/50 px-4 py-2 rounded-lg text-center">
-                        <p className="text-white font-medium">5 Fan Photos + 1 Fan Video</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="px-4 py-3 flex items-center justify-between border-t bg-white">
-                    <div className="flex items-center space-x-6">
-                      <div className="flex items-center space-x-2 text-gray-500">
-                        <Heart className="w-5 h-5" />
-                        <span>245</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-gray-500">
-                        <MessageCircle className="w-5 h-5" />
-                        <span>32</span>
-                      </div>
-                    </div>
+                    <p className="text-gray-700">Premium content</p>
                   </div>
                 </div>
               </div>
@@ -321,34 +288,34 @@ function AdvertisementPro() {
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Age</h3>
-                    <p className="font-bold">22</p>
+                    <p className="font-bold">{profileData.details.age}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Length</h3>
-                    <p className="font-bold">170 cm</p>
+                    <p className="font-bold">{profileData.details.height} cm</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Cup size</h3>
-                    <p className="font-bold">B</p>
+                    <p className="font-bold">{profileData.details.cup_size}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Weight</h3>
-                    <p className="font-bold">50 kg</p>
+                    <p className="font-bold">{profileData.details.weight} kg</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Body size</h3>
-                    <p className="font-bold">Slim</p>
+                    <p className="font-bold">{profileData.details.body_type}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Descent</h3>
-                    <p className="font-bold">Bulgarian</p>
+                    <p className="font-bold">{profileData.details.ethnicity}</p>
                   </div>
                   <div className="flex items-start justify-between">
                     <h3 className="font-medium text-gray-600 w-28">Language</h3>
                     <div className="flex gap-2">
-                      <p className="font-bold">English</p>
-                      <p className="font-bold">Bulgarian</p>
-                      <p className="font-bold">Italian</p>
+                      {profileData.details.languages.map((lang, idx) => (
+                        <p key={idx} className="font-bold">{lang}</p>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -358,30 +325,12 @@ function AdvertisementPro() {
               <div className="bg-pink-100 p-6 rounded-lg">
                 <h2 className="text-xl font-bold mb-4">Prices</h2>
                 <div className="grid gap-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">15 min</h3>
-                    <p className="font-bold">€ 50,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">30 min</h3>
-                    <p className="font-bold">€ 100,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">1 hour</h3>
-                    <p className="font-bold">€ 130,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">2 hours</h3>
-                    <p className="font-bold">€ 250,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">Night</h3>
-                    <p className="font-bold">€ 600,-</p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-600 w-28">Escort extra</h3>
-                    <p className="font-bold">€ 50,-</p>
-                  </div>
+                  {rates.map((r, idx) => (
+                    <div key={idx} className="flex items-center justify-between">
+                      <h3 className="font-medium text-gray-600 w-28">{r.duration}</h3>
+                      <p className="font-bold">€ {r.price},-</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -390,122 +339,28 @@ function AdvertisementPro() {
             <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
               <h2 className="text-xl font-bold mb-4">Service</h2>
               <div className="grid grid-cols-2 gap-x-12 gap-y-4">
-                <div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Girlfriend Experience</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Striptease</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Fingering</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Handjob</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Kissing</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">French kissing</span>
-                    <span className="text-gray-700">€ 20,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Pussy licking</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Rimming (me)</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Rimming (client)</span>
-                    <span className="text-gray-700">€ 20,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Blowjob with condom</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Blowjob without condom</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Deep Throat</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Sex with condom</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Sex without condom</span>
-                    <span className="text-gray-700">€ 50,-</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Relaxing Massage</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Erotic Massage</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Anal Massage</span>
-                    <span className="text-gray-700">€ 30,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Dildo (me)</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Dildo (client)</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Trio MFF</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Trio MMF</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Groupsex</span>
-                    <span className="text-gray-700">€ 50,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Photo's</span>
-                    <span className="text-gray-700">€ 50,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Video</span>
-                    <span className="text-gray-700">€ 100,-</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">High Heels</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Role Play</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">Soft SM</span>
-                    <span className="text-gray-700">Included</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-500">BDSM</span>
-                    <span className="text-gray-700">€ 50,-</span>
-                  </div>
-                </div>
+                {services.length > 0 ? (
+                  <>
+                    <div>
+                      {services.slice(0, Math.ceil(services.length / 2)).map((s) => (
+                        <div key={s.id} className="flex justify-between items-center">
+                          <span className="text-pink-500">{s.service_name}</span>
+                          <span className="text-gray-700">{s.is_available ? 'Included' : 'Not available'}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      {services.slice(Math.ceil(services.length / 2)).map((s) => (
+                        <div key={s.id} className="flex justify-between items-center">
+                          <span className="text-pink-500">{s.service_name}</span>
+                          <span className="text-gray-700">{s.is_available ? 'Included' : 'Not available'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="col-span-2 text-center text-gray-500 py-8">No services available</div>
+                )}
               </div>
             </div>
 
@@ -513,13 +368,7 @@ function AdvertisementPro() {
             <div className="mt-12">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Reviews</h2>
-                <Link
-                  to="/write-review/melissa"
-                  className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
-                >
-                  <Star className="h-5 w-5" />
-                  Write Review
-                </Link>
+                <RoleAwareWriteReviewButton ladyId={profileData.id} />
               </div>
               <div className="space-y-6">
                 {reviews.map((review) => (
@@ -538,8 +387,7 @@ function AdvertisementPro() {
                 <div className="flex items-start space-x-2">
                   <MapPin className="h-5 w-5 text-pink-500 mt-1" />
                   <div>
-                    <p className="font-medium">Amsterdam</p>
-                    <p className="text-gray-600">Keizersgracht</p>
+                    <p className="font-medium">{profileData.location}</p>
                   </div>
                 </div>
               </div>
@@ -576,7 +424,7 @@ function AdvertisementPro() {
                     </button>
                   </div>
                   <Link
-                    to="/send-gift/melissa"
+                    to={`/send-gift/${encodeURIComponent(profileData.name || 'lady')}`}
                     className="block w-full bg-pink-500 text-white p-3 rounded-lg hover:bg-pink-600 transition-colors font-medium text-center"
                   >
                     Send Gift
@@ -617,7 +465,7 @@ function AdvertisementPro() {
                     </button>
                   </div>
                   <Link
-                    to="/booking/melissa"
+                    to={`/booking/${profileData.id}`}
                     className="block w-full bg-pink-500 text-white p-3 rounded-lg hover:bg-pink-600 transition-colors font-medium text-center"
                   >
                     Book Appointment
@@ -663,13 +511,13 @@ function AdvertisementPro() {
               <div className="bg-pink-100 p-6 rounded-lg">
                 <h2 className="text-xl font-bold mb-3">Working Hours</h2>
                 <div className="grid grid-cols-2 gap-2 text-gray-700">
-                  <div>Monday</div><div>Closed</div>
-                  <div>Tuesday</div><div>Closed</div>
-                  <div>Wednesday</div><div>09:00 - 22:00</div>
-                  <div>Thursday</div><div>09:00 - 22:00</div>
-                  <div>Friday</div><div>09:00 - 24:00</div>
-                  <div>Saturday</div><div>09:00 - 24:00</div>
-                  <div>Sunday</div><div>09:00 - 24:00</div>
+                  <div>Monday</div><div>{profileData.opening_hours.monday}</div>
+                  <div>Tuesday</div><div>{profileData.opening_hours.tuesday}</div>
+                  <div>Wednesday</div><div>{profileData.opening_hours.wednesday}</div>
+                  <div>Thursday</div><div>{profileData.opening_hours.thursday}</div>
+                  <div>Friday</div><div>{profileData.opening_hours.friday}</div>
+                  <div>Saturday</div><div>{profileData.opening_hours.saturday}</div>
+                  <div>Sunday</div><div>{profileData.opening_hours.sunday}</div>
                 </div>
               </div>
 
@@ -679,15 +527,15 @@ function AdvertisementPro() {
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Member since</span>
-                    <span className="font-medium">05/Dec/2020</span>
+                    <span className="font-medium">{new Date(profileData.member_since).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Views on profile</span>
-                    <span className="font-medium">23.548</span>
+                    <span className="font-medium">{profileData.views.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Last time online</span>
-                    <span className="font-medium">12/Apr/2021</span>
+                    <span className="font-medium">{new Date(profileData.last_online).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-4">
@@ -706,6 +554,33 @@ function AdvertisementPro() {
         </div>
       </div>
     </div>
+  );
+}
+
+function RoleAwareWriteReviewButton({ ladyId }: { ladyId: string }) {
+  const { user } = useAuth();
+  const role = (user?.user_metadata?.role || '').toLowerCase();
+  if (role === 'client') {
+    return (
+      <Link
+        to={`/write-review/${ladyId}`}
+        className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
+      >
+        <Star className="h-5 w-5" />
+        Write Review
+      </Link>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled
+      title="Only clients can write reviews"
+      className="px-6 py-2 rounded-lg bg-gray-200 text-gray-500 cursor-not-allowed flex items-center gap-2"
+    >
+      <Star className="h-5 w-5" />
+      Write Review
+    </button>
   );
 }
 

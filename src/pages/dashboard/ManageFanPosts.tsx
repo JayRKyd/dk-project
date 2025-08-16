@@ -1,24 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { 
   ArrowLeft,
-  Plus,
-  Image,
+  
   Video,
   Lock,
   MessageCircle,
   Heart,
   Trash2,
   Edit,
-  X,
-  Check,
-  Camera,
+  
   Eye,
   Shield,
   AlertCircle
 } from 'lucide-react';
 import { useFanPosts } from '../../hooks/useProtectedApi';
+import { useUserProfile } from '../../hooks/useUserProfile';
+import { fanPostsService } from '../../services/fanPostsService';
 import { MembershipGuard } from '../../components/auth/MembershipGuard';
+// no direct supabase usage here
 
 type Theme = 'Happy' | 'Romantic' | 'No comment' | 'Sexy' | 'Wild' | 'Hardcore';
 
@@ -46,110 +46,52 @@ interface Comment {
   createdAt: string;
 }
 
-const samplePosts: FanPost[] = [
-  {
-    id: '1',
-    content: 'Special content for my premium subscribers 💋\n\nTheme: Naughty\n5 Photos + 1 Fan Video',
-    theme: 'Sexy',
-    imageUrls: [
-      'https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1604004555489-723a93d6ce74?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1524250502761-1ac6f2e30d43?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80'
-    ],
-    videoUrls: ['video1.mp4'],
-    isPremium: true,
-    unlockPrice: 10,
-    createdAt: '2024-01-15T10:00:00Z',
-    likes: 245,
-    comments: [
-      {
-        id: 'c1',
-        author: {
-          name: 'John D.',
-          imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80'
-        },
-        content: 'Beautiful photos! When can we meet?',
-        createdAt: '2024-01-15T10:30:00Z'
-      },
-      {
-        id: 'c2',
-        author: {
-          name: 'Mike R.',
-          imageUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80'
-        },
-        content: 'You look amazing as always! 😍',
-        createdAt: '2024-01-15T11:00:00Z'
-      }
-    ],
-    allowComments: true
-  },
-  {
-    id: '2',
-    content: 'Here\'s a free photo for all my fans! 💕\n\nTheme: Happy\n1 Photo',
-    theme: 'Happy',
-    imageUrls: [
-      'https://images.unsplash.com/photo-1604004555489-723a93d6ce74?auto=format&fit=crop&w=800&q=80'
-    ],
-    isPremium: false,
-    unlockPrice: 0,
-    createdAt: '2024-01-14T15:00:00Z',
-    likes: 178,
-    comments: [
-      {
-        id: 'c3',
-        author: {
-          name: 'David K.',
-          imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'
-        },
-        content: 'Stunning! When are you available?',
-        createdAt: '2024-01-14T15:30:00Z'
-      }
-    ],
-    allowComments: true
-  }
-];
+// Sample posts removed; data is fetched from backend
 
 export default function ManageFanPosts() {
-  const navigate = useNavigate();
-  const [posts, setPosts] = useState<FanPost[]>(samplePosts);
+  const { profile } = useUserProfile();
+  const [posts, setPosts] = useState<FanPost[]>([]);
   const [editingPost, setEditingPost] = useState<FanPost | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedPost, setSelectedPost] = useState<FanPost | null>(null);
   const [replyText, setReplyText] = useState<{ [key: string]: string }>({});
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newContent, setNewContent] = useState('');
+  const [newTheme, setNewTheme] = useState<Theme>('No comment');
+  const [newIsPremium, setNewIsPremium] = useState(false);
+  const [newUnlockPrice, setNewUnlockPrice] = useState(5);
+  const [newFiles, setNewFiles] = useState<FileList | null>(null);
 
   // Protected API integration
-  const { list: fanPostsApi, createFanPost } = useFanPosts();
+  const { list: fanPostsApi } = useFanPosts();
 
   const themes: Theme[] = ['Happy', 'Romantic', 'No comment', 'Sexy', 'Wild', 'Hardcore'];
 
   // Load fan posts with membership validation
   useEffect(() => {
     const loadFanPosts = async () => {
-      await fanPostsApi.execute();
+      if (!profile) return;
+      const ladyUserId = (profile as any).user_id || profile.id;
+      const rows = await fanPostsService.getLadyPostsByUser(ladyUserId);
+      setPosts(rows.map(row => ({
+        id: row.id,
+        content: row.content,
+        theme: (row.theme as any) || 'No comment',
+        imageUrls: row.imageUrls,
+        videoUrls: row.videoUrls,
+        isPremium: row.isPremium,
+        unlockPrice: row.unlockPrice,
+        createdAt: row.createdAt,
+        likes: row.likes,
+        comments: [],
+        allowComments: true,
+      })));
     };
     loadFanPosts();
-  }, [fanPostsApi]);
+  }, [profile?.id]);
 
-  const [newPost, setNewPost] = useState({
-    content: '',
-    images: [] as File[],
-    videos: [] as File[],
-    isPremium: false,
-    unlockPrice: 10
-  });
-
-  const handleCreatePost = () => {
-    // Handle post creation
-    setNewPost({
-      content: '',
-      images: [],
-      videos: [],
-      isPremium: false,
-      unlockPrice: 10
-    });
-  };
+  // Creation handled on /fan-posts/create
 
   const handleDeletePost = () => {
     if (selectedPost) {
@@ -172,10 +114,57 @@ export default function ManageFanPosts() {
     }
   };
 
-  const handleReply = (postId: string, commentId: string) => {
+  const handleReply = (_: string, commentId: string) => {
     if (replyText[commentId]?.trim()) {
       console.log('Sending reply:', replyText[commentId]);
       setReplyText(prev => ({ ...prev, [commentId]: '' }));
+    }
+  };
+
+  const handleCreatePost = async () => {
+    if (!newContent.trim()) {
+      alert('Please add some content');
+      return;
+    }
+    try {
+      setCreating(true);
+      // Create post
+      await fanPostsService.createFanPost({
+        content: newContent,
+        theme: newTheme,
+        isPremium: newIsPremium,
+        creditsCost: newIsPremium ? newUnlockPrice : 0,
+        mediaFiles: newFiles ? Array.from(newFiles) : []
+      });
+      // Refresh list
+      if (profile) {
+        const ladyUserId = (profile as any).user_id || profile.id;
+        const rows = await fanPostsService.getLadyPostsByUser(ladyUserId);
+        setPosts(rows.map(row => ({
+          id: row.id,
+          content: row.content,
+          theme: (row.theme as any) || 'No comment',
+          imageUrls: row.imageUrls,
+          videoUrls: row.videoUrls,
+          isPremium: row.isPremium,
+          unlockPrice: row.unlockPrice,
+          createdAt: row.createdAt,
+          likes: row.likes,
+          comments: [],
+          allowComments: true,
+        })));
+      }
+      // Reset form
+      setShowCreate(false);
+      setNewContent('');
+      setNewTheme('No comment');
+      setNewIsPremium(false);
+      setNewUnlockPrice(5);
+      setNewFiles(null);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to create post');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -247,8 +236,14 @@ export default function ManageFanPosts() {
           <div className="text-sm text-gray-500">
             {posts.length} {posts.length === 1 ? 'post' : 'posts'} total
           </div>
+          <button
+            onClick={() => setShowCreate(v => !v)}
+            className="bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 transition-colors"
+          >
+            {showCreate ? 'Close' : 'Create Post'}
+          </button>
           <Link
-            to="/fan-posts/melissa"
+            to={`/fan-posts/${(profile?.name || 'me').toLowerCase()}`}
             className="bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
           >
             <Eye className="h-5 w-5" />
@@ -256,6 +251,70 @@ export default function ManageFanPosts() {
           </Link>
         </div>
       </div>
+
+      {showCreate && (
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
+          <h3 className="text-lg font-semibold mb-4">New Fan Post</h3>
+          <div className="space-y-4">
+            <textarea
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              className="w-full px-4 py-2 border border-pink-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent bg-pink-50"
+              rows={4}
+              placeholder="Write something about your post..."
+            />
+            <div>
+              <label className="block text-sm font-medium mb-2">Theme</label>
+              <select
+                className="w-full border rounded p-2"
+                value={newTheme}
+                onChange={(e) => setNewTheme(e.target.value as Theme)}
+              >
+                {themes.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="bg-pink-50 rounded-lg p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Lock className="h-5 w-5 text-pink-500" />
+                <span className="text-sm">Premium content</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={newIsPremium} onChange={(e) => setNewIsPremium(e.target.checked)} />
+                <div className="w-11 h-6 bg-gray-200 rounded-full peer-checked:bg-pink-500 after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+              </label>
+            </div>
+            {newIsPremium && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Unlock price (DK)</label>
+                <select
+                  className="w-full border rounded p-2"
+                  value={newUnlockPrice}
+                  onChange={(e) => setNewUnlockPrice(parseInt(e.target.value))}
+                >
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium mb-2">Media</label>
+              <input type="file" multiple accept="image/*,video/*" onChange={(e) => setNewFiles(e.target.files)} />
+            </div>
+            <div className="flex justify-end gap-3">
+              <button className="px-4 py-2" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button
+                className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 disabled:opacity-50"
+                disabled={creating}
+                onClick={handleCreatePost}
+              >
+                {creating ? 'Creating...' : 'Create Post'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Posts List */}
       <div className="space-y-6">
@@ -452,7 +511,7 @@ export default function ManageFanPosts() {
                       </div>
                     </div>
                   ))}
-                  {post.videoUrls?.map((url, index) => (
+                  {post.videoUrls?.map((_, index) => (
                     <div key={`video-${index}`} className="aspect-square relative group bg-black rounded-lg flex items-center justify-center">
                       <Video className="h-8 w-8 text-white" />
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">

@@ -10,12 +10,16 @@ import {
   Mail,
   Globe,
   DollarSign,
-  Upload,
   Save,
-  Loader2
+  Loader2,
+  AlertCircle,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import { useClubDashboard } from '../../hooks/useClubDashboard';
 import { clubSettingsService, ClubPhoto, ClubFacility, ClubHours, ClubService } from '../../services/clubSettingsService';
+import { supabase } from '../../lib/supabase';
+import { uploadImage, uploadMultipleImages } from '../../services/imageService';
 
 interface FormData {
   // Club Info
@@ -65,91 +69,7 @@ interface FormData {
   };
 }
 
-const initialFormData: FormData = {
-  name: 'Pink Angels Club',
-  description: 'Welcome to Pink Angels Club, Amsterdam\'s premier adult entertainment venue. We offer a luxurious and discreet environment where you can enjoy the company of our beautiful ladies.',
-  website: 'www.pinkangels.nl',
-  email: 'info@pinkangels.nl',
-  phone: '06 12 234 678',
-  
-  address: 'Keizersgracht 8',
-  city: 'Amsterdam',
-  postalCode: '1015 CN',
-  
-  country: 'Netherlands',
-  region: '',
-  latitude: undefined,
-  longitude: undefined,
-  parkingInfo: '',
-  publicTransportInfo: '',
-  
-  logoUrl: '',
-  coverPhotoUrl: '',
-  
-  facilities: {
-    'Private Rooms': true,
-    'VIP Lounge': true,
-    'Parking': true,
-    'Taxi Service': true,
-    'Discrete entrance': true,
-    'Wifi': true,
-    'Smoking area': true,
-    'Lounge area': true,
-    'Bar with alcoholic drinks': true,
-    'Bar with non-alcoholic drinks': true,
-    'Restaurant with snacks': true,
-    'Restaurant with buffet': true,
-    'Sex shop': true,
-    'Cinema': true,
-    'Disco/dancing': true,
-    'ATM Machine': true,
-    'Slot machines': true,
-    'Sauna': true,
-    'Jacuzzi': true,
-    'Swimming pool': true,
-    'Dressing room': true,
-    'Showers': true,
-    'Towels': true,
-    'Bathrobe': true,
-    'Garden/outdoor area': true,
-    'Relaxing massage': true,
-    'Erotic massage': true,
-    'Striptease': true,
-    'Lapdance': true,
-    'Sex show': true,
-    'Private rooms': true,
-    'BDSM room': true,
-    'Bar Service': true,
-    'Private Parking': true,
-    'Shower Facilities': true,
-    'Air Conditioning': true,
-    'Credit Card Payment': true,
-    'Security Service': true,
-    'Champagne Room': true,
-    'VIP Package': true,
-    'Bachelor Party': true,
-    'Private Event': true
-  },
-  
-  openingHours: {
-    monday: { isOpen: true, open: '12:00', close: '03:00' },
-    tuesday: { isOpen: true, open: '12:00', close: '03:00' },
-    wednesday: { isOpen: true, open: '12:00', close: '03:00' },
-    thursday: { isOpen: true, open: '12:00', close: '03:00' },
-    friday: { isOpen: true, open: '12:00', close: '05:00' },
-    saturday: { isOpen: true, open: '12:00', close: '05:00' },
-    sunday: { isOpen: true, open: '14:00', close: '03:00' }
-  },
-  
-  entryFee: '50',
-  roomFee: '80',
-  drinkPrices: {
-    softDrinks: '3',
-    beer: '4',
-    wine: '5',
-    cocktails: '8'
-  }
-};
+// initial sample data removed
 
 const tabs = [
   { id: 'info', label: 'Club Info', icon: Building2 },
@@ -209,6 +129,7 @@ export default function ClubSettings() {
   });
   
   // Additional state for complex data
+  // Local buffers (not used directly in UI)
   const [photos, setPhotos] = useState<ClubPhoto[]>([]);
   const [facilitiesData, setFacilitiesData] = useState<ClubFacility[]>([]);
   const [hoursData, setHoursData] = useState<ClubHours[]>([]);
@@ -216,12 +137,64 @@ export default function ClubSettings() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const [galleryImages, setGalleryImages] = useState<string[]>([]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoMessage, setPhotoMessage] = useState<{text: string; type: 'success' | 'error' | 'info' | null}>({text: '', type: null});
+
+  const DEFAULT_FACILITIES: string[] = [
+    'Private Rooms',
+    'VIP Lounge',
+    'Parking',
+    'Taxi Service',
+    'Discrete entrance',
+    'Wifi',
+    'Smoking area',
+    'Lounge area',
+    'Bar with alcoholic drinks',
+    'Bar with non-alcoholic drinks',
+    'Restaurant with snacks',
+    'Restaurant with buffet',
+    'Sex shop',
+    'Cinema',
+    'Disco/dancing',
+    'ATM Machine',
+    'Slot machines',
+    'Sauna',
+    'Jacuzzi',
+    'Swimming pool',
+    'Dressing room',
+    'Showers',
+    'Towels',
+    'Bathrobe',
+    'Garden/outdoor area',
+    'Relaxing massage',
+    'Erotic massage',
+    'Striptease',
+    'Lapdance',
+    'Sex show',
+    'Private rooms',
+    'BDSM room',
+    'Bar Service',
+    'Private Parking',
+    'Shower Facilities',
+    'Air Conditioning',
+    'Credit Card Payment',
+    'Security Service',
+    'Champagne Room',
+    'VIP Package',
+    'Bachelor Party',
+    'Private Event'
+  ];
   
   // Load club settings data
   useEffect(() => {
     const loadClubSettings = async () => {
-      if (!clubProfile?.id) return;
-      
+      // If no club profile exists yet, allow the form to render with defaults
+      // so the user can complete setup and create the profile on save.
+      if (!clubProfile?.id) {
+        setLoadingData(false);
+        return;
+      }
       setLoadingData(true);
       try {
         // Load all club settings data
@@ -237,11 +210,14 @@ export default function ClubSettings() {
         setHoursData(hoursData);
         setServicesData(servicesData);
         
-        // Convert facilities data to form format
+        // Convert facilities data to form format; if none, initialize defaults as false
         const facilitiesMap: { [key: string]: boolean } = {};
         facilitiesData.forEach(facility => {
           facilitiesMap[facility.facility_name] = facility.is_available;
         });
+        if (Object.keys(facilitiesMap).length === 0) {
+          DEFAULT_FACILITIES.forEach(name => { facilitiesMap[name] = false; });
+        }
         
         // Convert hours data to form format
         const hoursMap: { [key: string]: { isOpen: boolean; open: string; close: string } } = {
@@ -314,14 +290,38 @@ export default function ClubSettings() {
     loadClubSettings();
   }, [clubProfile?.id]);
 
+  // Load gallery images for club
+  useEffect(() => {
+    const fetchGallery = async () => {
+      if (!clubProfile?.id) return;
+      try {
+        const { data, error } = await supabase.storage
+          .from('gallery-images')
+          .list(clubProfile.id, { sortBy: { column: 'name', order: 'asc' } });
+        if (error) throw error;
+        if (data && data.length > 0) {
+          const imageUrls = data.map(file => {
+            const { data: urlData } = supabase.storage
+              .from('gallery-images')
+              .getPublicUrl(`${clubProfile.id}/${file.name}`);
+            return urlData.publicUrl;
+          });
+          setGalleryImages(imageUrls);
+        }
+      } catch (err) {
+        console.error('Error fetching club gallery:', err);
+      }
+    };
+    fetchGallery();
+  }, [clubProfile?.id]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clubProfile?.id) return;
-    
+    // If profile does not exist yet, create it from form data via actions.updateClubProfile
     setIsSubmitting(true);
     try {
-      // Update club profile basic info
-      await actions.updateClubProfile({
+      // Update or create club profile basic info
+      const updatedProfile = await actions.updateClubProfile({
         name: formData.name,
         description: formData.description,
         website: formData.website,
@@ -339,6 +339,73 @@ export default function ClubSettings() {
         logo_url: formData.logoUrl,
         cover_photo_url: formData.coverPhotoUrl
       });
+      const clubId = (updatedProfile && (updatedProfile as any).id) || clubProfile?.id;
+      if (clubId) {
+        // Persist facilities
+        try {
+          const facilitiesArray = Object.entries(formData.facilities).map(([facility_name, is_available]) => ({
+            facility_name,
+            is_available: Boolean(is_available),
+            category: 'amenities' as const,
+          }));
+          await clubSettingsService.updateClubFacilities(clubId, facilitiesArray as any);
+        } catch (err) {
+          console.warn('Saving facilities failed:', err);
+        }
+
+        // Persist hours
+        try {
+          const dayToIdx: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+          const hoursArray = Object.entries(formData.openingHours).map(([day, v]) => ({
+            day_of_week: dayToIdx[day] ?? 0,
+            is_open: Boolean(v.isOpen),
+            open_time: v.open || null,
+            close_time: v.close || null,
+            is_24_hours: false,
+            special_note: null as any,
+          }));
+          await clubSettingsService.updateClubHours(clubId, hoursArray as any);
+        } catch (err) {
+          console.warn('Saving hours failed:', err);
+        }
+
+        // Persist pricing/services
+        try {
+          const toNum = (s: string) => {
+            const n = parseFloat(String(s).replace(/[^0-9.]/g, ''));
+            return isNaN(n) ? 0 : n;
+          };
+          const servicesArray = [
+            {
+              service_name: 'Entrance',
+              service_type: 'entrance' as const,
+              price: toNum(formData.entryFee),
+              currency: 'EUR',
+              duration_minutes: null as any,
+              description: null as any,
+              is_active: true,
+              display_order: 1,
+            },
+            {
+              service_name: 'Room (per hour)',
+              service_type: 'room' as const,
+              price: toNum(formData.roomFee),
+              currency: 'EUR',
+              duration_minutes: 60,
+              description: null as any,
+              is_active: true,
+              display_order: 2,
+            },
+            { service_name: 'Soft Drinks', service_type: 'drink' as const, price: toNum(formData.drinkPrices.softDrinks), currency: 'EUR', is_active: true, display_order: 10 } as any,
+            { service_name: 'Beer', service_type: 'drink' as const, price: toNum(formData.drinkPrices.beer), currency: 'EUR', is_active: true, display_order: 11 } as any,
+            { service_name: 'Wine', service_type: 'drink' as const, price: toNum(formData.drinkPrices.wine), currency: 'EUR', is_active: true, display_order: 12 } as any,
+            { service_name: 'Cocktails', service_type: 'drink' as const, price: toNum(formData.drinkPrices.cocktails), currency: 'EUR', is_active: true, display_order: 13 } as any,
+          ];
+          await clubSettingsService.updateClubServices(clubId, servicesArray as any);
+        } catch (err) {
+          console.warn('Saving services failed:', err);
+        }
+      }
       
       // Success notification could be added here
       console.log('Club settings updated successfully');
@@ -352,7 +419,8 @@ export default function ClubSettings() {
   };
   
   // Show loading state
-  if (loading.profile || loadingData) {
+  // loading from hook is a boolean; allow form if either loading is done or we purposely allowed when no profile
+  if (loading || loadingData) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-center py-12">
@@ -457,16 +525,283 @@ export default function ClubSettings() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       <Globe className="h-4 w-4 inline mr-1" />
-                      Website
+                      Website (optional)
                     </label>
                     <input
                       type="url"
                       value={formData.website}
                       onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                      placeholder="https://yourclub.com"
+                      placeholder="https://yourclub.com (optional)"
                     />
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Photos Tab */}
+            {activeTab === 'photos' && (
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-6">Photos</h2>
+
+                {photoMessage.text && (
+                  <div className={`mb-4 p-4 rounded-lg flex items-center ${
+                    photoMessage.type === 'success' ? 'bg-green-100 text-green-700 border-l-4 border-green-500' :
+                    photoMessage.type === 'error' ? 'bg-red-100 text-red-700 border-l-4 border-red-500' :
+                    'bg-blue-100 text-blue-700 border-l-4 border-blue-500'
+                  }`}>
+                    {photoMessage.type === 'success' && <CheckCircle className="h-5 w-5 mr-2" />}
+                    {photoMessage.type === 'error' && <AlertCircle className="h-5 w-5 mr-2" />}
+                    {photoMessage.type === 'info' && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}
+                    <p>{photoMessage.text}</p>
+                  </div>
+                )}
+
+                <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-6">
+                  {isUploadingPhoto && (
+                    <div className="absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center z-10">
+                      <div className="flex flex-col items-center">
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-pink-500 mb-2"></div>
+                        <span className="text-sm text-gray-700">Uploading photo...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Logo Upload */}
+                  <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden relative group">
+                    {formData.logoUrl ? (
+                      <>
+                        <img src={`${formData.logoUrl}?t=${Date.now()}`} alt="Logo" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <div className="absolute inset-0 bg-black bg-opacity-30 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                          <span className="text-white font-medium z-10 mb-2 opacity-0 group-hover:opacity-100 transition-opacity">Logo</span>
+                          <label className="cursor-pointer p-2 bg-pink-500 rounded-full z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Camera className="h-6 w-6 text-white" />
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept="image/jpeg,image/png,image/webp"
+                              onChange={async (e) => {
+                                if (!clubProfile?.id || !e.target.files || e.target.files.length === 0) return;
+                                try {
+                                  setIsUploadingPhoto(true);
+                                  setPhotoMessage({text: 'Uploading logo...', type: 'info'});
+                                  const file = e.target.files[0];
+                                  const { url } = await uploadImage(file, 'profile-pictures', '', clubProfile.id);
+                                  setFormData(prev => ({ ...prev, logoUrl: url }));
+                                  await actions.updateClubProfile({ logo_url: url });
+                                  setPhotoMessage({text: 'Logo updated successfully!', type: 'success'});
+                                  setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                                } catch (err) {
+                                  console.error('Error uploading logo:', err);
+                                  setPhotoMessage({text: err instanceof Error ? err.message : 'Failed to upload logo', type: 'error'});
+                                  setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                                } finally {
+                                  setIsUploadingPhoto(false);
+                                  e.currentTarget.value = '';
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </>
+                    ) : (
+                      <label className="cursor-pointer flex flex-col items-center justify-center h-full hover:bg-gray-200 transition-colors">
+                        <Camera className="h-12 w-12 text-gray-400 mb-3" />
+                        <span className="text-base font-medium text-gray-700">Logo</span>
+                        <span className="text-xs text-gray-500 mt-1">Click to upload</span>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={async (e) => {
+                            if (!clubProfile?.id || !e.target.files || e.target.files.length === 0) return;
+                            try {
+                              setIsUploadingPhoto(true);
+                              setPhotoMessage({text: 'Uploading logo...', type: 'info'});
+                              const file = e.target.files[0];
+                              const { url } = await uploadImage(file, 'profile-pictures', '', clubProfile.id);
+                              setFormData(prev => ({ ...prev, logoUrl: url }));
+                              await actions.updateClubProfile({ logo_url: url });
+                              setPhotoMessage({text: 'Logo updated successfully!', type: 'success'});
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                            } catch (err) {
+                              console.error('Error uploading logo:', err);
+                              setPhotoMessage({text: err instanceof Error ? err.message : 'Failed to upload logo', type: 'error'});
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                            } finally {
+                              setIsUploadingPhoto(false);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Cover Photo Upload */}
+                  <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden relative group">
+                    {formData.coverPhotoUrl ? (
+                      <>
+                        <img src={`${formData.coverPhotoUrl}?t=${Date.now()}`} alt="Cover" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <div className="absolute inset-0 bg-black bg-opacity-30 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                          <span className="text-white font-medium z-10 mb-2 opacity-0 group-hover:opacity-100 transition-opacity">Cover</span>
+                          <label className="cursor-pointer p-2 bg-pink-500 rounded-full z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Camera className="h-6 w-6 text-white" />
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept="image/jpeg,image/png,image/webp"
+                              onChange={async (e) => {
+                                if (!clubProfile?.id || !e.target.files || e.target.files.length === 0) return;
+                                try {
+                                  setIsUploadingPhoto(true);
+                                  setPhotoMessage({text: 'Uploading cover photo...', type: 'info'});
+                                  const file = e.target.files[0];
+                                  const { url } = await uploadImage(file, 'profile-pictures', '', clubProfile.id);
+                                  setFormData(prev => ({ ...prev, coverPhotoUrl: url }));
+                                  await actions.updateClubProfile({ cover_photo_url: url });
+                                  setPhotoMessage({text: 'Cover photo updated successfully!', type: 'success'});
+                                  setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                                } catch (err) {
+                                  console.error('Error uploading cover:', err);
+                                  setPhotoMessage({text: err instanceof Error ? err.message : 'Failed to upload cover photo', type: 'error'});
+                                  setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                                } finally {
+                                  setIsUploadingPhoto(false);
+                                  e.currentTarget.value = '';
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </>
+                    ) : (
+                      <label className="cursor-pointer flex flex-col items-center justify-center h-full hover:bg-gray-200 transition-colors">
+                        <Camera className="h-12 w-12 text-gray-400 mb-3" />
+                        <span className="text-base font-medium text-gray-700">Cover Photo</span>
+                        <span className="text-xs text-gray-500 mt-1">Click to upload</span>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={async (e) => {
+                            if (!clubProfile?.id || !e.target.files || e.target.files.length === 0) return;
+                            try {
+                              setIsUploadingPhoto(true);
+                              setPhotoMessage({text: 'Uploading cover photo...', type: 'info'});
+                              const file = e.target.files[0];
+                              const { url } = await uploadImage(file, 'profile-pictures', '', clubProfile.id);
+                              setFormData(prev => ({ ...prev, coverPhotoUrl: url }));
+                              await actions.updateClubProfile({ cover_photo_url: url });
+                              setPhotoMessage({text: 'Cover photo updated successfully!', type: 'success'});
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                            } catch (err) {
+                              console.error('Error uploading cover:', err);
+                              setPhotoMessage({text: err instanceof Error ? err.message : 'Failed to upload cover photo', type: 'error'});
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                            } finally {
+                              setIsUploadingPhoto(false);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Club Gallery */}
+                  {galleryImages.map((imageUrl, index) => (
+                    <div key={`gallery-${index}`} className="aspect-square bg-gray-100 rounded-lg overflow-hidden relative group">
+                      <img src={imageUrl.includes('?t=') ? imageUrl : `${imageUrl}?t=${Date.now()}`} alt={`Gallery ${index + 1}`} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black bg-opacity-40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <button
+                          type="button"
+                          className="p-2 bg-red-500 bg-opacity-80 rounded-full"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!clubProfile?.id) return;
+                            try {
+                              setPhotoMessage({text: 'Deleting photo...', type: 'info'});
+                              const baseUrl = imageUrl.split('?')[0];
+                              const filename = baseUrl.split('/').pop();
+                              if (!filename) throw new Error('Invalid image URL');
+                              const { error } = await supabase.storage
+                                .from('gallery-images')
+                                .remove([`${clubProfile.id}/${filename}`]);
+                              if (error) throw error;
+                              setGalleryImages(prev => prev.filter(url => !url.startsWith(baseUrl)));
+                              setPhotoMessage({text: 'Photo deleted successfully!', type: 'success'});
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                            } catch (err) {
+                              console.error('Error deleting club photo:', err);
+                              setPhotoMessage({text: err instanceof Error ? err.message : 'Failed to delete photo', type: 'error'});
+                              setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                            }
+                          }}
+                        >
+                          <XCircle className="h-6 w-6 text-white" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Add Gallery Photo */}
+                  {galleryImages.length < 6 && (
+                    <label className="aspect-square bg-gray-100 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors">
+                      <Camera className="h-12 w-12 text-gray-400 mb-3" />
+                      <span className="text-base font-medium text-gray-700">Add Photo</span>
+                      <span className="text-xs text-gray-500 mt-1">Click to upload</span>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        onChange={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!clubProfile?.id || !e.target.files || e.target.files.length === 0) return;
+                          try {
+                            setIsUploadingPhoto(true);
+                            setPhotoMessage({text: 'Uploading gallery photos...', type: 'info'});
+                            const files = Array.from(e.target.files);
+                            if (galleryImages.length + files.length > 6) {
+                              throw new Error(`You can only have up to 6 gallery photos. You can add ${6 - galleryImages.length} more.`);
+                            }
+                            const uploadedImages = await uploadMultipleImages(files, 'gallery-images', clubProfile.id, clubProfile.id);
+                            try {
+                              const { ContentModerationService } = await import('../../services/contentModerationService');
+                              await ContentModerationService.recordUploadedImages(clubProfile.id, uploadedImages);
+                            } catch (recErr) {
+                              console.warn('Failed to record uploaded images for moderation:', recErr);
+                            }
+                            e.currentTarget.value = '';
+                            const newUrls = uploadedImages.map(img => `${img.url}?t=${Date.now()}`);
+                            setGalleryImages(prev => [...prev, ...newUrls]);
+                            setPhotoMessage({text: 'Gallery photos uploaded successfully!', type: 'success'});
+                            setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
+                          } catch (err) {
+                            console.error('Error uploading gallery photos:', err);
+                            setPhotoMessage({text: err instanceof Error ? err.message : 'Failed to upload photos', type: 'error'});
+                            setTimeout(() => setPhotoMessage({text: '', type: null}), 5000);
+                          } finally {
+                            setIsUploadingPhoto(false);
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
+
+                <div className="bg-pink-50 rounded-lg p-4 text-sm text-gray-600">
+                  <h3 className="font-medium text-gray-900 mb-2">Photo Guidelines:</h3>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Maximum 6 photos allowed</li>
+                    <li>Photos must be clear and recent</li>
+                    <li>No explicit nudity allowed</li>
+                    <li>Minimum resolution: 800x600 pixels</li>
+                    <li>Maximum file size: 5MB per photo</li>
+                  </ul>
                 </div>
               </div>
             )}
@@ -563,7 +898,7 @@ export default function ClubSettings() {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">Facilities</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {Object.entries(formData.facilities).map(([facility, isAvailable]) => (
+                  {(Object.keys(formData.facilities).length > 0 ? Object.entries(formData.facilities) : DEFAULT_FACILITIES.map(name => [name, false] as [string, boolean])).map(([facility, isAvailable]) => (
                     <label key={facility} className="flex items-center space-x-2">
                       <input
                         type="checkbox"

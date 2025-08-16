@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar, Clock, MapPin, Plus, Check, ArrowLeft } from 'lucide-react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import { profileService, type ProfileData } from '../services/profileService';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 interface BookingForm {
   date: string;
@@ -15,45 +18,18 @@ interface BookingForm {
   selectedServices: string[];
 }
 
-interface Service {
-  name: string;
-  price: string | 'Included';
-}
-
-const services: Service[] = [
-  { name: 'Girlfriend Experience', price: 'Included' },
-  { name: 'Striptease', price: 'Included' },
-  { name: 'Fingering', price: 'Included' },
-  { name: 'Handjob', price: 'Included' },
-  { name: 'Kissing', price: 'Included' },
-  { name: 'French kissing', price: '€ 20,-' },
-  { name: 'Pussy licking', price: 'Included' },
-  { name: 'Rimming (me)', price: 'Included' },
-  { name: 'Rimming (client)', price: '€ 20,-' },
-  { name: 'Blowjob with condom', price: 'Included' },
-  { name: 'Blowjob without condom', price: 'Included' },
-  { name: 'Deep Throat', price: 'Included' },
-  { name: 'Sex with condom', price: 'Included' },
-  { name: 'Sex without condom', price: '€ 50,-' },
-  { name: 'Relaxing Massage', price: 'Included' },
-  { name: 'Erotic Massage', price: 'Included' },
-  { name: 'Anal Massage', price: '€ 30,-' },
-  { name: 'Dildo (me)', price: 'Included' },
-  { name: 'Dildo (client)', price: 'Included' },
-  { name: 'Trio MFF', price: 'Included' },
-  { name: 'Trio MMF', price: 'Included' },
-  { name: 'Groupsex', price: '€ 50,-' },
-  { name: "Photo's", price: '€ 50,-' },
-  { name: 'Video', price: '€ 100,-' },
-  { name: 'High Heels', price: 'Included' },
-  { name: 'Role Play', price: 'Included' },
-  { name: 'Soft SM', price: 'Included' },
-  { name: 'BDSM', price: '€ 50,-' },
-];
+type ExtraService = { name: string; priceLabel: string; };
 
 export default function Booking() {
   const { id } = useParams();
-  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [lady, setLady] = useState<ProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+  const [availableTimes, setAvailableTimes] = useState<string[]>(['10:00','11:00','12:00','14:00','15:00','16:00']);
   const [formData, setFormData] = useState<BookingForm>({
     date: '',
     time: '',
@@ -65,6 +41,82 @@ export default function Booking() {
     selectedServices: [],
   });
 
+  // Load lady profile by slug/id
+  useEffect(() => {
+    const load = async () => {
+      if (!id) { setError('No profile id'); setLoading(false); return; }
+      try {
+        setLoading(true);
+        const data = await profileService.getProfileBySlug(id);
+        if (!data) setError('Profile not found');
+        setLady(data);
+        // Also load availability for today by weekday
+        const weekday = new Date().getDay();
+        const { data: slots } = await supabase
+          .from('lady_availability_slots')
+          .select('time')
+          .eq('profile_id', data?.id || '')
+          .eq('weekday', weekday);
+        if (slots && slots.length > 0) {
+          setAvailableTimes(slots.map(s => s.time));
+        }
+      } catch (e) {
+        console.error('Failed to load booking profile', e);
+        setError('Failed to load profile');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [id]);
+
+  // When date changes, load working hours and generate slots within the range, then remove booked times
+  useEffect(() => {
+    const refreshTimes = async () => {
+      if (!lady?.id || !formData.date) return;
+      const d = new Date(formData.date);
+      const weekday = d.getDay();
+      // Prefer working hours if present, otherwise use availability slots
+      let times: string[] = [];
+      const { data: wh } = await supabase
+        .from('lady_working_hours')
+        .select('is_closed, open_time, close_time')
+        .eq('profile_id', lady.id)
+        .eq('weekday', weekday)
+        .maybeSingle();
+      if (wh && !wh.is_closed && wh.open_time && wh.close_time) {
+        // Generate 1-hour slots from open_time to close_time
+        const [openH, openM] = wh.open_time.split(':').map(Number);
+        const [closeH, closeM] = wh.close_time.split(':').map(Number);
+        const start = openH * 60 + openM;
+        const end = closeH * 60 + closeM;
+        for (let m = start; m + 60 <= end; m += 60) {
+          const h = Math.floor(m / 60).toString().padStart(2, '0');
+          const mm = (m % 60).toString().padStart(2, '0');
+          times.push(`${h}:${mm}`);
+        }
+      } else {
+        const { data: slots } = await supabase
+          .from('lady_availability_slots')
+          .select('time')
+          .eq('profile_id', lady.id)
+          .eq('weekday', weekday);
+        times = (slots || []).map(s => s.time);
+      }
+      // Filter out already booked times (pending/confirmed) for that date
+      const { data: booked } = await supabase
+        .from('bookings')
+        .select('time, status')
+        .eq('profile_id', lady.id)
+        .eq('date', formData.date)
+        .in('status', ['pending','confirmed']);
+      const bookedSet = new Set((booked || []).map(b => b.time));
+      times = times.filter(t => !bookedSet.has(t));
+      if (times.length > 0) setAvailableTimes(times);
+    };
+    refreshTimes();
+  }, [lady?.id, formData.date]);
+
   const toggleService = (serviceName: string) => {
     setFormData(prev => ({
       ...prev,
@@ -74,34 +126,109 @@ export default function Booking() {
     }));
   };
 
+  // Map DB services to the UI list of selectable extras with display prices
+  const extraServices: ExtraService[] = useMemo(() => {
+    const db = lady?.services || [];
+    return db.map(s => ({
+      name: s.service_name,
+      priceLabel: s.is_available ? 'Included' : 'Not available'
+    }));
+  }, [lady]);
+
+  // Build duration options from DB rates
+  const rateOptions = useMemo(() => {
+    const rates = lady?.rates || [];
+    return rates.map(r => ({ value: r.duration, label: `${r.duration} (€${r.price})` }));
+  }, [lady]);
+
+  // When lady/rates load, set a sensible default duration if current value doesn't exist
+  useEffect(() => {
+    if (!lady) return;
+    if (rateOptions.length === 0) return;
+    const exists = rateOptions.some(o => o.value.toLowerCase() === formData.duration.toLowerCase());
+    if (!exists) {
+      setFormData(prev => ({ ...prev, duration: rateOptions[0].value }));
+    }
+  }, [lady, rateOptions]);
+
   const calculateExtraServicesCost = () => {
+    // If we later add priced extras, parse from label like "€ 20,-"
     return formData.selectedServices.reduce((total, serviceName) => {
-      const service = services.find(s => s.name === serviceName);
-      if (service && service.price !== 'Included') {
-        return total + parseInt(service.price.replace(/[^0-9]/g, ''));
-      }
-      return total;
+      const service = extraServices.find(s => s.name === serviceName);
+      if (!service) return total;
+      const match = service.priceLabel.match(/([0-9]+)/);
+      return match ? total + parseInt(match[1], 10) : total;
     }, 0);
   };
 
   const getDurationBaseCost = () => {
-    switch (formData.duration) {
-      case '15 min': return 50;
-      case '30 min': return 100;
-      case '1 hour': return 130;
-      case '2 hours': return 250;
-      case 'night': return 600;
-      default: return 0;
-    }
+    // Use lady.rates from DB
+    const rate = (lady?.rates || []).find(r => r.duration.toLowerCase() === formData.duration.toLowerCase());
+    return rate ? Number(rate.price) : 0;
   };
 
   const totalCost = getDurationBaseCost() + calculateExtraServicesCost() + 
     (formData.location === 'outcall' ? 50 : 0);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const durationToMinutes = (label: string): number => {
+    const key = label.toLowerCase();
+    if (key.includes('15')) return 15;
+    if (key.includes('30')) return 30;
+    if (key.includes('2')) return 120;
+    if (key.includes('night')) return 600;
+    return 60; // default 1 hour
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Booking submitted:', formData);
-    // Handle booking submission
+    setSubmitError(null);
+    setSubmitSuccess(null);
+
+    try {
+      if (!user?.id) {
+        setSubmitError('You must be logged in as a client to book.');
+        return;
+      }
+      if (!lady?.id) {
+        setSubmitError('Profile not found.');
+        return;
+      }
+      if (!formData.date || !formData.time) {
+        setSubmitError('Please select a date and time.');
+        return;
+      }
+
+      setSubmitting(true);
+
+      const { error: insertError } = await supabase
+        .from('bookings')
+        .insert({
+          client_id: user.id,
+          profile_id: lady.id,
+          date: formData.date,
+          time: formData.time,
+          duration: durationToMinutes(formData.duration),
+          location_type: formData.location,
+          address: formData.location === 'outcall' ? formData.address || null : null,
+          total_cost: totalCost,
+          status: 'pending'
+        });
+
+      if (insertError) {
+        console.error('Booking insert error:', insertError);
+        setSubmitError('Failed to create booking. Please try again.');
+        return;
+      }
+
+      setSubmitSuccess('Booking request sent! We will confirm shortly.');
+      // Optionally clear some fields
+      setFormData(prev => ({ ...prev, message: '', selectedServices: [] }));
+    } catch (err) {
+      console.error('Booking error:', err);
+      setSubmitError('Unexpected error while creating booking.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -117,24 +244,28 @@ export default function Booking() {
           </Link>
         </div>
 
-        <div className="flex items-center gap-6 mb-8">
-          <img
-            src="https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=150&q=80"
-            alt="Melissa"
-            className="w-24 h-24 rounded-full object-cover border-4 border-pink-100"
-          />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Book Appointment with{' '}
-              <Link to="/ladies/pro/melissa" className="text-pink-500 hover:text-pink-600 transition-colors">
-                Melissa
-              </Link>
-            </h1>
-            <p className="text-gray-600 mt-1">
-              <span className="text-pink-500 font-medium">Available today</span> • Utrecht, Netherlands
-            </p>
+        {loading ? (
+          <div className="flex items-center gap-3 text-gray-600 mb-8">Loading...</div>
+        ) : (
+          <div className="flex items-center gap-6 mb-8">
+            <img
+              src={lady?.image_url || 'https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=150&q=80'}
+              alt={lady?.name || 'Lady'}
+              className="w-24 h-24 rounded-full object-cover border-4 border-pink-100"
+            />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Book Appointment with{' '}
+                <Link to={`/ladies/pro/${id}`} className="text-pink-500 hover:text-pink-600 transition-colors">
+                  {lady?.name || 'Lady'}
+                </Link>
+              </h1>
+              <p className="text-gray-600 mt-1">
+                <span className="text-pink-500 font-medium">Available today</span> • {lady?.location || 'Unknown'}
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Date and Time Selection */}
@@ -194,7 +325,7 @@ export default function Booking() {
                 Select Time
               </label>
               <div className="grid grid-cols-3 gap-2">
-                {['10:00', '11:00', '12:00', '14:00', '15:00', '16:00'].map((time) => (
+                {availableTimes.map((time) => (
                   <button
                     key={time}
                     type="button"
@@ -252,11 +383,13 @@ export default function Booking() {
               onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
               className="w-full px-4 py-2 border border-pink-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent bg-white"
             >
-              <option value="15 min">15 minutes (€50)</option>
-              <option value="30 min">30 minutes (€100)</option>
-              <option value="1 hour">1 hour (€130)</option>
-              <option value="2 hours">2 hours (€250)</option>
-              <option value="night">Night (€600)</option>
+              {rateOptions.length > 0 ? (
+                rateOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))
+              ) : (
+                <option value="">No rates set</option>
+              )}
             </select>
           </div>
 
@@ -266,7 +399,7 @@ export default function Booking() {
               Select Services
             </label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              {services.map((service) => (
+              {extraServices.map((service) => (
                 <button
                   key={service.name}
                   type="button"
@@ -288,9 +421,9 @@ export default function Booking() {
                   <span className={`text-sm ${
                     formData.selectedServices.includes(service.name)
                       ? 'text-white'
-                      : service.price === 'Included' ? 'text-green-600' : 'text-pink-500'
+                      : service.priceLabel === 'Included' ? 'text-green-600' : 'text-pink-500'
                   }`}>
-                    {service.price}
+                    {service.priceLabel}
                   </span>
                 </button>
               ))}
@@ -372,7 +505,7 @@ export default function Booking() {
               >
                 <MapPin className="h-6 w-6 mx-auto mb-2" />
                 <div className="font-medium">Visit Me</div>
-                <div className="text-sm opacity-75">Keizersgracht, Amsterdam</div>
+                <div className="text-sm opacity-75">{lady?.location || 'Location not specified'}</div>
               </button>
               <button
                 type="button"
@@ -459,7 +592,7 @@ export default function Booking() {
                   <div className="font-medium">Location</div>
                   <div>
                     {formData.location === 'incall' 
-                      ? 'Visit at Keizersgracht, Amsterdam'
+                      ? `Visit at ${lady?.location || 'Location not specified'}`
                       : 'Outcall service (+€50 travel fee)'}
                   </div>
                   {formData.location === 'outcall' && formData.address && (
@@ -474,12 +607,12 @@ export default function Booking() {
                   <h4 className="font-medium text-gray-900 mb-2">Selected Services</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {formData.selectedServices.map(serviceName => {
-                      const service = services.find(s => s.name === serviceName);
+                      const service = extraServices.find(s => s.name === serviceName);
                       return (
                         <div key={serviceName} className="flex justify-between items-center text-gray-700">
                           <span>{serviceName}</span>
-                          <span className={service?.price === 'Included' ? 'text-green-600' : 'text-pink-500'}>
-                            {service?.price}
+                          <span className={service?.priceLabel === 'Included' ? 'text-green-600' : 'text-pink-500'}>
+                            {service?.priceLabel}
                           </span>
                         </div>
                       );
@@ -534,11 +667,22 @@ export default function Booking() {
           </div>
 
           {/* Submit Button */}
+          {submitError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-3">
+              {submitError}
+            </div>
+          )}
+          {submitSuccess && (
+            <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg p-3 mb-3">
+              {submitSuccess}
+            </div>
+          )}
           <button
             type="submit"
-            className="w-full bg-pink-500 text-white py-3 rounded-lg hover:bg-pink-600 transition-colors font-medium"
+            disabled={submitting}
+            className={`w-full py-3 rounded-lg font-medium ${submitting ? 'bg-gray-300 text-gray-600' : 'bg-pink-500 text-white hover:bg-pink-600'} transition-colors`}
           >
-            Confirm Booking
+            {submitting ? 'Submitting…' : 'Confirm Booking'}
           </button>
 
           {/* Terms and Privacy */}

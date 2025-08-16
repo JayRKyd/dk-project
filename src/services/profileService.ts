@@ -67,6 +67,41 @@ export interface OpeningHours {
 }
 
 export const profileService = {
+  async getLadyByName(name: string): Promise<ProfileData | null> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          name,
+          image_url,
+          rating,
+          loves,
+          description,
+          price,
+          location,
+          created_at,
+          updated_at
+        `)
+        .eq('name', name)
+        .eq('role', 'lady')
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return null; // No profile found
+        }
+        throw error;
+      }
+
+      // Use the same logic as getProfileById
+      return this.getProfileById(data.id);
+    } catch (error) {
+      console.error('Error fetching lady profile:', error);
+      return null;
+    }
+  },
+
   async getProfileById(id: string): Promise<ProfileData | null> {
     try {
       // Fetch main profile data
@@ -82,7 +117,8 @@ export const profileService = {
           price,
           location,
           created_at,
-          updated_at
+          updated_at,
+          user_id
         `)
         .eq('id', id)
         .single();
@@ -98,18 +134,30 @@ export const profileService = {
         .select('*')
         .eq('profile_id', id)
         .single();
+      
+      if (detailsError) {
+        console.warn('Error fetching profile details:', detailsError);
+      }
 
       // Fetch services
       const { data: services, error: servicesError } = await supabase
         .from('lady_services')
         .select('*')
         .eq('profile_id', id);
+      
+      if (servicesError) {
+        console.warn('Error fetching services:', servicesError);
+      }
 
       // Fetch rates
       const { data: rates, error: ratesError } = await supabase
         .from('lady_rates')
         .select('*')
         .eq('profile_id', id);
+      
+      if (ratesError) {
+        console.warn('Error fetching rates:', ratesError);
+      }
 
       // Fetch reviews
       const { data: reviews, error: reviewsError } = await supabase
@@ -125,9 +173,38 @@ export const profileService = {
         `)
         .eq('profile_id', id)
         .order('created_at', { ascending: false });
+      
+      if (reviewsError) {
+        console.warn('Error fetching reviews:', reviewsError);
+      }
 
-      // Fetch images (assuming they're stored as JSON array in profile_details)
-      const images = details?.images || [];
+      // Fetch images from Supabase Storage gallery for this profile
+      // Files live in bucket 'gallery-images' under folder <profile_id>/
+      let images: string[] = [];
+      try {
+        const { data: files, error: listError } = await supabase
+          .storage
+          .from('gallery-images')
+          .list(`${id}`, { limit: 50, sortBy: { column: 'name', order: 'asc' } });
+
+        if (!listError && files && files.length > 0) {
+          images = files.map((f) => {
+            const { data } = supabase.storage
+              .from('gallery-images')
+              .getPublicUrl(`${id}/${f.name}`);
+            return data.publicUrl;
+          });
+        } else if (profile.image_url) {
+          // Fallback: if no gallery files yet, use the profile image if present
+          images = [profile.image_url];
+        }
+      } catch (galleryErr) {
+        console.warn('Error loading gallery images:', galleryErr);
+        // As a fallback, surface the profile image if available
+        if (profile.image_url) {
+          images = [profile.image_url];
+        }
+      }
 
       // Construct opening hours (default values for now)
       const opening_hours: OpeningHours = {
@@ -139,6 +216,18 @@ export const profileService = {
         saturday: '09:00 - 24:00',
         sunday: '09:00 - 24:00'
       };
+
+      // Check if owner is blocked; if so, prevent viewing
+      try {
+        const { data: owner } = await supabase
+          .from('users')
+          .select('is_blocked')
+          .eq('id', profile?.user_id)
+          .single();
+        if (owner?.is_blocked) {
+          return null;
+        }
+      } catch (_) {}
 
       // Construct the complete profile data
       const profileData: ProfileData = {

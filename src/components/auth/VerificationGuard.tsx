@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUserProfile } from '../../hooks/useUserProfile';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
@@ -171,7 +171,7 @@ export const VerificationGuard: React.FC<VerificationGuardProps> = ({
 
   // Check if verification was skipped
   const verificationSkipped = localStorage.getItem('verification_skipped') === 'true';
-  const skipDate = localStorage.getItem('verification_skip_date');
+  // const skipDate = localStorage.getItem('verification_skip_date');
 
   // If verified, allow access
   if (isVerified) {
@@ -185,8 +185,7 @@ export const VerificationGuard: React.FC<VerificationGuardProps> = ({
 
   // Handle redirect if specified
   if (redirectTo) {
-    navigate(redirectTo, { replace: true });
-    return null;
+    return <Navigate to={redirectTo} replace />;
   }
 
   // Show custom fallback if provided

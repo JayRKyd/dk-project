@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { TestAccountCreator } from '../../components/dev/TestAccountCreator';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { FeatureGate } from '../../components/auth/FeatureGate';
@@ -24,12 +23,13 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useUserProfile } from '../../hooks/useUserProfile';
-import { supabase } from '../../lib/supabase';
-import { uploadImage, uploadMultipleImages } from '../../services/imageService';
+// import { supabase } from '../../lib/supabase';
+// import { uploadImage } from '../../services/imageService';
 import { getProfileStats, getRecentActivities, getProfileCompletion, Activity } from '../../services/profileStatsService';
-import { getNotifications, markNotificationsAsRead, Notification } from '../../services/notificationsService';
+import { notificationsService, NotificationItem } from '../../services/notificationsService';
 import { getAdvertisementStatus, bumpAdvertisement, formatTimeUntilExpiry, AdvertisementStatus } from '../../services/advertisementService';
 import { getUpcomingBookings, getBookingStats, Booking } from '../../services/bookingService';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface DashboardState {
   membershipTier: 'FREE' | 'PRO' | 'PRO-PLUS' | 'ULTRA';
@@ -48,7 +48,7 @@ interface DashboardState {
   };
   upcomingBookings: Booking[];
   recentActivities: Activity[];
-  notifications: Notification[];
+  notifications: (NotificationItem & { is_read?: boolean })[];
   profileCompletion: {
     completionPercentage: number;
     missingItems: string[];
@@ -76,7 +76,8 @@ interface DashboardState {
 
 export default function LadyDashboardFree() {
   const navigate = useNavigate();
-  const { profile, loading: profileLoading, updateProfile } = useUserProfile();
+  const { profile, loading: profileLoading } = useUserProfile();
+  const { user } = useAuth();
   
   const [dashboardData, setDashboardData] = useState<DashboardState>({
     membershipTier: 'FREE',
@@ -127,6 +128,16 @@ export default function LadyDashboardFree() {
       navigate('/dashboard');
     }
   }, [profile, navigate]);
+
+  // Ensure the avatar spinner stops once profile state has finished loading
+  useEffect(() => {
+    if (!profileLoading) {
+      setDashboardData(prev => ({
+        ...prev,
+        loading: { ...prev.loading, profile: false },
+      }));
+    }
+  }, [profileLoading]);
 
   // Load profile stats
   useEffect(() => {
@@ -242,7 +253,7 @@ export default function LadyDashboardFree() {
           loading: { ...prev.loading, notifications: true }
         }));
 
-        const notifications = await getNotifications(profile.id, 3);
+        const notifications = await notificationsService.list(profile.id, 3);
         
         setDashboardData(prev => ({
           ...prev,
@@ -332,134 +343,8 @@ export default function LadyDashboardFree() {
     fetchAdvertisementStatus();
   }, [profile]);
 
-  // Handle profile picture upload with watermarking and optimization
-  const handleProfilePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    // Prevent form submission
-    event.preventDefault();
-    event.stopPropagation();
-    
-    if (!profile || !event.target.files || event.target.files.length === 0) {
-      return;
-    }
-
-    try {
-      setDashboardData(prev => ({
-        ...prev,
-        loading: { ...prev.loading, profile: true },
-        bumpMessage: {
-          text: 'Processing and uploading your image...',
-          type: 'info'
-        }
-      }));
-
-      const file = event.target.files[0];
-      console.log('File selected:', file.name, file.type, file.size);
-      
-      // Validate file type
-      const fileExt = file.name.split('.').pop()?.toLowerCase();
-      const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
-      
-      if (!fileExt || !allowedExtensions.includes(fileExt)) {
-        throw new Error('Invalid file type. Please upload a JPG, PNG, or WebP image.');
-      }
-      
-      // Validate file size (max 5MB)
-      const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
-      if (file.size > MAX_FILE_SIZE) {
-        throw new Error('File is too large. Maximum size is 5MB.');
-      }
-
-      console.log('Starting image upload to Supabase...');
-      // Use the imageService to process and upload the image
-      // This will resize, optimize, and add a watermark
-      const { url } = await uploadImage(file, 'profile-pictures', '', profile.id);
-      console.log('Image uploaded successfully, URL:', url);
-      
-      // Clear the file input to prevent accidental re-uploads
-      event.target.value = '';
-
-      // Create a local copy of the profile image for immediate display
-      const localImageUrl = URL.createObjectURL(file);
-      console.log('Created local image URL for immediate display:', localImageUrl);
-      
-      // Force image update with local URL first for immediate feedback
-      const imgElement = document.querySelector('.profile-img') as HTMLImageElement;
-      if (imgElement) {
-        console.log('Updating image element with local URL');
-        imgElement.src = localImageUrl;
-      }
-      
-      console.log('Updating profile with new image URL in database...');
-      // Update profile with new image URL - now the users table has an image_url column
-      try {
-        // First, try to update the user record directly
-        const { error: userError } = await supabase
-          .from('users')
-          .update({ image_url: url })
-          .eq('id', profile.id);
-          
-        if (userError) {
-          console.error('Error updating user with image_url:', userError);
-          // Fallback to the profile update method
-          await updateProfile({ image_url: url });
-        } else {
-          console.log('User updated successfully with new image URL');
-          
-          // Refresh the profile data to get the updated image URL
-          const updatedProfile = await updateProfile({ image_url: url });
-          console.log('Profile refreshed with new data:', updatedProfile);
-        }
-        
-        // Now update with the actual Supabase URL with cache-busting
-        if (imgElement) {
-          console.log('Updating image element with Supabase URL');
-          imgElement.src = `${url}?t=${Date.now()}`;
-        }
-      } catch (profileUpdateError) {
-        console.error('Error updating profile, but image was uploaded:', profileUpdateError);
-        // Even if profile update fails, we still want to show the image
-        if (imgElement) {
-          imgElement.src = `${url}?t=${Date.now()}`;
-        }
-      }
-
-      // Update local state
-      setDashboardData(prev => ({
-        ...prev,
-        loading: { ...prev.loading, profile: false },
-        bumpMessage: {
-          text: 'Profile picture updated successfully!',
-          type: 'success'
-        }
-      }));
-      
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        setDashboardData(prev => ({
-          ...prev,
-          bumpMessage: { text: '', type: null }
-        }));
-      }, 3000);
-    } catch (error) {
-      console.error('Error uploading profile picture:', error);
-      setDashboardData(prev => ({
-        ...prev,
-        loading: { ...prev.loading, profile: false },
-        bumpMessage: {
-          text: error instanceof Error ? error.message : 'Failed to upload profile picture',
-          type: 'error'
-        }
-      }));
-      
-      // Clear error message after 5 seconds
-      setTimeout(() => {
-        setDashboardData(prev => ({
-          ...prev,
-          bumpMessage: { text: '', type: null }
-        }));
-      }, 5000);
-    }
-  };
+  // Handle profile picture upload (legacy no-op; avatar managed in settings)
+  // Removed profile picture upload handler from this page
 
   // Format date for display
   const formatBookingDate = (dateStr: string) => {
@@ -565,7 +450,7 @@ export default function LadyDashboardFree() {
                 </div>
               ) : (
                 <img 
-                  src={profile?.image_url ? `${profile.image_url}?t=${Date.now()}` : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%23f3f4f6"/><text x="50%" y="50%" font-family="Arial" font-size="14" fill="%236b7280" text-anchor="middle" dominant-baseline="middle">Upload Photo</text></svg>'} 
+                  src={(profile?.image_url || user?.user_metadata?.image_url) ? `${(profile?.image_url || user?.user_metadata?.image_url)}?t=${Date.now()}` : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%23f3f4f6"/><text x="50%" y="50%" font-family="Arial" font-size="14" fill="%236b7280" text-anchor="middle" dominant-baseline="middle">Upload Photo</text></svg>'} 
                   alt="Profile" 
                   className="h-full w-full object-cover profile-img"
                   onError={(e) => {
@@ -575,16 +460,7 @@ export default function LadyDashboardFree() {
                 />
               )}
             </div>
-            <label htmlFor="profile-upload" className="absolute bottom-0 right-0 bg-pink-500 p-1.5 rounded-full cursor-pointer">
-              <Camera className="h-4 w-4 text-white" />
-              <input 
-                type="file" 
-                id="profile-upload" 
-                className="hidden" 
-                accept="image/*"
-                onChange={handleProfilePictureUpload}
-              />
-            </label>
+            {/* Avatar upload removed; profile picture managed in settings */}
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Welcome, {profile?.name || profile?.username || 'Lady'}!</h1>
@@ -801,17 +677,37 @@ export default function LadyDashboardFree() {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Advertisement Status */}
+              {/* Advertisement Status (summary) */}
               <div className="bg-pink-50 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-gray-700">Advertisement Status</span>
-                  <span className="font-bold text-green-600">Active</span>
+                  <span
+                    className={`font-bold ${
+                      dashboardData.advertisementStatus?.ad_status === 'active'
+                        ? 'text-green-600'
+                        : dashboardData.advertisementStatus?.ad_status === 'bumped'
+                        ? 'text-blue-600'
+                        : dashboardData.advertisementStatus?.ad_status === 'inactive'
+                        ? 'text-yellow-600'
+                        : 'text-red-600'
+                    }`}
+                  >
+                    {dashboardData.advertisementStatus?.ad_status
+                      ? dashboardData.advertisementStatus.ad_status.charAt(0).toUpperCase() +
+                        dashboardData.advertisementStatus.ad_status.slice(1)
+                      : 'Unknown'}
+                  </span>
                 </div>
                 <div className="w-full bg-pink-200 rounded-full h-2">
-                  <div className="bg-pink-500 h-2 rounded-full" style={{ width: '65%' }}></div>
+                  <div
+                    className="bg-pink-500 h-2 rounded-full"
+                    style={{ width: `${dashboardData.advertisementStatus?.ad_status === 'expired' ? 0 : 65}%` }}
+                  ></div>
                 </div>
                 <p className="text-sm text-gray-600 mt-2">
-                  58 days remaining until your FREE advertisement expires
+                  {dashboardData.advertisementStatus
+                    ? `${formatTimeUntilExpiry(dashboardData.advertisementStatus)} remaining until your ${dashboardData.membershipTier} advertisement expires`
+                    : 'Loading status...'}
                 </p>
               </div>
 
@@ -1306,7 +1202,7 @@ export default function LadyDashboardFree() {
               <div className="space-y-4">
                 {dashboardData.notifications.slice(0, 3).map((notification) => {
                   let icon, bgColor, iconColor;
-                  switch (notification.type) {
+                  switch (notification.type as any) {
                     case 'gift':
                       icon = <Gift className="h-5 w-5 text-pink-500" />;
                       bgColor = notification.is_read ? 'bg-pink-50' : 'bg-pink-100';
@@ -1346,8 +1242,7 @@ export default function LadyDashboardFree() {
                       className={`flex items-center gap-4 p-3 ${bgColor} rounded-lg cursor-pointer transition-colors hover:opacity-80`}
                       onClick={async () => {
                         if (!notification.is_read) {
-                          await markNotificationsAsRead([notification.id]);
-                          // Update local state
+                          await notificationsService.markRead(notification.id);
                           setDashboardData(prev => ({
                             ...prev,
                             notifications: prev.notifications.map(n => 
@@ -1393,8 +1288,7 @@ export default function LadyDashboardFree() {
             )}
           </div>
 
-          {/* Development Test Interface */}
-          <TestAccountCreator />
+          {/* Development Test Interface removed for production */}
         </div>
       </div>
     </div>

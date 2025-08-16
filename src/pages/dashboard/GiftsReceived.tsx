@@ -12,6 +12,7 @@ export default function GiftsReceived() {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [replyText, setReplyText] = useState<{ [key: string]: string }>({});
   const [sendingReply, setSendingReply] = useState<{ [key: string]: boolean }>({});
+  const [collecting, setCollecting] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
     if (user?.id) {
@@ -89,6 +90,19 @@ const formatDate = (dateStr: string) => {
       setSelectedDate(dates[currentIndex + 1]);
     } else if (direction === 'next' && currentIndex > 0) {
       setSelectedDate(dates[currentIndex - 1]);
+    }
+  };
+
+  const handleCollect = async (giftId: string) => {
+    try {
+      setCollecting(prev => ({ ...prev, [giftId]: true }));
+      await giftService.collectGift(giftId);
+      await loadGiftsReceived();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to collect gift.';
+      alert(msg);
+    } finally {
+      setCollecting(prev => ({ ...prev, [giftId]: false }));
     }
   };
 
@@ -276,9 +290,18 @@ const formatDate = (dateStr: string) => {
               </div>
               <div className="flex items-center gap-4 ml-auto">
                 <div className="text-5xl transform transition-all hover:scale-110">{gift.type.emoji}</div>
-                <div className="flex items-center gap-1 bg-pink-100 text-pink-800 px-2 py-1 rounded-full text-sm">
-                  <Coins className="h-4 w-4" />
-                  <span>{gift.type.credits} DK</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-pink-100 text-pink-800 px-2 py-1 rounded-full text-sm">
+                    <Coins className="h-4 w-4" />
+                    <span>{gift.type.credits} DK</span>
+                  </div>
+                  {gift.status === 'collected' ? (
+                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                      Collected {gift.collectedAt ? new Date(gift.collectedAt).toLocaleDateString() : ''}
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Pending</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -307,8 +330,8 @@ const formatDate = (dateStr: string) => {
                 </div>
               )}
               
-              {/* Reply input */}
-              <div className="flex gap-2">
+              {/* Reply input + Collect */}
+              <div className="flex gap-2 items-center">
                 <input
                   type="text"
                   value={replyText[gift.id] || ''}
@@ -326,6 +349,14 @@ const formatDate = (dateStr: string) => {
                 >
                   <Send className="h-4 w-4" />
                   <span>{sendingReply[gift.id] ? 'Sending...' : 'Reply'}</span>
+                </button>
+                <button
+                  onClick={() => handleCollect(gift.id)}
+                  disabled={collecting[gift.id]}
+                  className="bg-green-500 text-white px-4 py-3 rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Gift className="h-4 w-4" />
+                  <span>{collecting[gift.id] ? 'Collecting...' : 'Collect'}</span>
                 </button>
               </div>
             </div>

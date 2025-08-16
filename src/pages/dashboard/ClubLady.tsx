@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft,
   Camera,
   Plus,
   Check,
   X,
-  AlertTriangle
+	AlertTriangle
 } from 'lucide-react';
+import { useClubDashboard } from '../../hooks/useClubDashboard';
+import { supabase } from '../../lib/supabase';
+import { clubService } from '../../services/clubService';
 
 interface LadyForm {
   // Basic Info
@@ -107,9 +110,18 @@ const initialFormData: LadyForm = {
 };
 
 export default function ClubLady() {
+	const navigate = useNavigate();
+	const { clubProfile, ladies, actions } = useClubDashboard() as any;
   const [formData, setFormData] = useState<LadyForm>(initialFormData);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const [showConfirmation, setShowConfirmation] = useState(false);
+	const [linkSearch, setLinkSearch] = useState('');
+	const [linkResult, setLinkResult] = useState<null | { id: string; email: string; username?: string }>(null);
+	const [linking, setLinking] = useState(false);
+	const [suggestions, setSuggestions] = useState<Array<{ id: string; email: string; username?: string }>>([]);
+	const [searchLoading, setSearchLoading] = useState(false);
+	const [searchDebounce, setSearchDebounce] = useState<number | undefined>(undefined);
+	const [findError, setFindError] = useState<string | null>(null);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -139,8 +151,82 @@ export default function ClubLady() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setShowConfirmation(true);
+		setShowConfirmation(true);
   };
+
+	const handleFindLady = async () => {
+		setFindError(null);
+		setLinkResult(null);
+		if (!linkSearch.trim()) {
+			setFindError('Enter an email or username');
+			return;
+		}
+		try {
+			// Search in public.users where role = 'lady' by email or username
+			const { data, error } = await supabase
+				.from('users')
+				.select('id, email, username, role')
+				.or(`email.ilike.%${linkSearch}%,username.ilike.%${linkSearch}%`)
+				.eq('role', 'lady')
+				.limit(1);
+			if (error) throw error;
+			if (!data || data.length === 0) {
+				setFindError('No lady account found by that email/username');
+				return;
+			}
+			setLinkResult({ id: data[0].id, email: data[0].email, username: data[0].username });
+		} catch (err: any) {
+			setFindError(err?.message || 'Search failed');
+		}
+	};
+
+	// Live suggestions after 2+ characters with debounce
+	const existingLadyIds = new Set<string>((ladies || []).map((l: any) => l.lady_id));
+	React.useEffect(() => {
+		if (searchDebounce) {
+			window.clearTimeout(searchDebounce);
+		}
+		if (!linkSearch || linkSearch.trim().length < 2) {
+			setSuggestions([]);
+			return;
+		}
+		const handle = window.setTimeout(async () => {
+			setSearchLoading(true);
+			try {
+				const { data, error } = await supabase
+					.from('users')
+					.select('id, email, username, role')
+					.or(`email.ilike.%${linkSearch}%,username.ilike.%${linkSearch}%`)
+					.eq('role', 'lady')
+					.limit(10);
+				if (error) throw error;
+				const filtered = (data || []).filter(u => !existingLadyIds.has(u.id));
+				setSuggestions(filtered);
+			} catch (err) {
+				// silent fail for suggestions
+				setSuggestions([]);
+			} finally {
+				setSearchLoading(false);
+			}
+		}, 300);
+		setSearchDebounce(handle as unknown as number);
+		// cleanup
+		return () => window.clearTimeout(handle);
+	}, [linkSearch]);
+
+	const handleLinkLady = async () => {
+		if (!clubProfile?.id || !linkResult?.id) return;
+		setLinking(true);
+		try {
+			await clubService.addLadyToClub(clubProfile.id, linkResult.id, 70);
+			await actions.fetchClubLadies(clubProfile.id);
+			navigate('/dashboard/club/ladies');
+		} catch (err) {
+			setFindError(err instanceof Error ? err.message : 'Failed to link lady');
+		} finally {
+			setLinking(false);
+		}
+	};
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -153,8 +239,68 @@ export default function ClubLady() {
         <span>Back to Ladies</span>
       </Link>
 
-      <div className="bg-white rounded-xl shadow-lg p-6">
+			<div className="bg-white rounded-xl shadow-lg p-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-8">Add New Lady</h1>
+
+				{/* Link Existing Lady Account */}
+				<div className="mb-8 p-4 border rounded-lg">
+					<h2 className="text-lg font-semibold text-gray-900 mb-3">Link Existing Lady Account</h2>
+					<div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center relative">
+						<input
+							type="text"
+							placeholder="Search by email or username..."
+							value={linkSearch}
+							onChange={(e) => setLinkSearch(e.target.value)}
+							className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+						/>
+						<button
+							onClick={handleFindLady}
+							className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
+						>
+							Find
+						</button>
+						{/* Suggestions dropdown */}
+						{(suggestions.length > 0 || searchLoading) && (
+							<div className="absolute top-full left-0 right-0 mt-2 bg-white border rounded-lg shadow z-10 max-h-60 overflow-auto">
+								{searchLoading && (
+									<div className="px-4 py-2 text-sm text-gray-500">Searching...</div>
+								)}
+								{suggestions.map(s => (
+									<button
+										key={s.id}
+										onClick={() => {
+											setLinkResult(s);
+											setSuggestions([]);
+										}}
+										className="w-full text-left px-4 py-2 hover:bg-pink-50"
+									>
+										<div className="font-medium text-gray-900">{s.username || s.email}</div>
+										<div className="text-xs text-gray-600">{s.email}</div>
+									</button>
+								))}
+								{!searchLoading && suggestions.length === 0 && (
+									<div className="px-4 py-2 text-sm text-gray-500">No results</div>
+								)}
+							</div>
+						)}
+					</div>
+					{findError && <p className="text-sm text-red-600 mt-2">{findError}</p>}
+					{linkResult && (
+						<div className="mt-4 flex items-center justify-between p-3 bg-pink-50 rounded">
+							<div>
+								<div className="font-medium text-gray-900">{linkResult.username || 'Lady Account'}</div>
+								<div className="text-sm text-gray-600">{linkResult.email}</div>
+							</div>
+							<button
+								onClick={handleLinkLady}
+								disabled={linking}
+								className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+							>
+								{linking ? 'Linking...' : 'Link to Club'}
+							</button>
+						</div>
+					)}
+				</div>
 
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* Basic Information */}

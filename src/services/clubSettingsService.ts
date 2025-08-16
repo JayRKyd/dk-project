@@ -225,6 +225,18 @@ export const clubSettingsService = {
     return data;
   },
 
+  async updateClubPromotion(promotionId: string, updates: any): Promise<any> {
+    const { data, error } = await supabase
+      .from('club_promotions')
+      .update(updates)
+      .eq('id', promotionId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
   // Club Verification Documents
   async getClubVerificationDocuments(clubId: string): Promise<any[]> {
     const { data, error } = await supabase

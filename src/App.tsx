@@ -10,6 +10,7 @@ import { LoadingSpinner } from './components/ui/LoadingSpinner';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import Search from './pages/Search';
+import SearchResults from './pages/SearchResults';
 import Clubs from './pages/Clubs';
 import Reviews from './pages/Reviews';
 import Ladies from './pages/Ladies';
@@ -28,15 +29,16 @@ import SendGift from './pages/SendGift';
 import Cookies from './pages/Cookies';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
+import FanPosts from './pages/FanPosts';
 import MembershipTier from './pages/dashboard/MembershipTier';
 import BumpAdvertisement from './pages/BumpAdvertisement';
 // Admin Components
 import { AdminGuard } from './components/admin/AdminGuard';
-import { DocumentViewer } from './components/admin/DocumentViewer';
+// import { DocumentViewer } from './components/admin/DocumentViewer';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import VerificationQueue from './pages/admin/VerificationQueue';
 import VerificationDetails from './pages/admin/VerificationDetails';
-import AdminUserManagement from './pages/admin/AdminUserManagement';
+// import AdminUserManagement from './pages/admin/AdminUserManagement';
 import LadyDashboard from './pages/dashboard/LadyDashboard';
 import LadyDashboardFree from './pages/dashboard/LadyDashboardFree';
 import AllActivity from './pages/dashboard/AllActivity';
@@ -59,11 +61,15 @@ import ClientSettings from './pages/dashboard/ClientSettings';
 import ClientFavorites from './pages/dashboard/ClientFavorites';
 import ClientCredits from './pages/dashboard/ClientCredits';
 import LadyReviews from './pages/dashboard/LadyReviews';
+import LadyPayouts from './pages/dashboard/LadyPayouts';
 // Import removed as it's not used
 import ClubDashboard from './pages/dashboard/ClubDashboard';
 import ClubLadies from './pages/dashboard/ClubLadies';
 import ClubPromo from './pages/dashboard/ClubPromo';
 import ClubCredits from './pages/dashboard/ClubCredits';
+import ClubBump from './pages/dashboard/ClubBump';
+import ClubUpgrade from './pages/dashboard/ClubUpgrade';
+import ClubReviews from './pages/dashboard/ClubReviews';
 import ClubSettings from './pages/dashboard/ClubSettings';
 import ClubVerification from './pages/ClubVerification';
 import ClubLady from './pages/dashboard/ClubLady';
@@ -76,6 +82,7 @@ import CommentModeration from './pages/admin/CommentModeration';
 import FinancialDashboard from './pages/admin/FinancialDashboard';
 import Analytics from './pages/admin/Analytics';
 import AdminSettings from './pages/admin/Settings';
+import AdminPayouts from './pages/admin/AdminPayouts';
 import CreditStore from './pages/dashboard/CreditStore';
 import CreditHistory from './pages/dashboard/CreditHistory';
 
@@ -107,6 +114,7 @@ function AppRoutes() {
       {/* Public Routes */}
       <Route path="/" element={<Ladies />} />
       <Route path="/search" element={<Search />} />
+      <Route path="/search/results" element={<SearchResults />} />
       <Route path="/clubs" element={<Clubs />} />
       <Route path="/ladies" element={<Ladies />} />
       <Route path="/reviews" element={<Reviews />} />
@@ -127,8 +135,8 @@ function AppRoutes() {
       <Route path="/support" element={<Support />} />
       <Route path="/contact" element={<Contact />} />
       <Route path="/send-gift/:name" element={<SendGift />} />
-      <Route path="/fan-posts" element={<div>Fan Posts</div>} />
-      <Route path="/fan-posts/:name" element={<div>Fan Post Detail</div>} />
+      <Route path="/fan-posts" element={<FanPosts />} />
+      <Route path="/fan-posts/:name" element={<FanPosts />} />
       <Route path="/cookies" element={<Cookies />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/terms" element={<Terms />} />
@@ -193,6 +201,13 @@ function AppRoutes() {
         <ProtectedRoute requiredRole="lady">
           <VerificationGuard>
             <DKCredits />
+          </VerificationGuard>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/lady/payouts" element={
+        <ProtectedRoute requiredRole="lady">
+          <VerificationGuard>
+            <LadyPayouts />
           </VerificationGuard>
         </ProtectedRoute>
       } />
@@ -276,7 +291,7 @@ function AppRoutes() {
       
       <Route path="/dashboard/club" element={
         <ProtectedRoute requiredRole="club">
-          <ClubVerificationGuard allowSkipped={true}>
+          <ClubVerificationGuard>
             <ClubDashboard />
           </ClubVerificationGuard>
         </ProtectedRoute>
@@ -295,7 +310,42 @@ function AppRoutes() {
           </ClubVerificationGuard>
         </ProtectedRoute>
       } />
+      <Route path="/dashboard/club/bump" element={
+        <ProtectedRoute requiredRole="club">
+          <ClubVerificationGuard>
+            <ClubBump />
+          </ClubVerificationGuard>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/club/upgrade" element={
+        <ProtectedRoute requiredRole="club">
+          <ClubVerificationGuard>
+            <ClubUpgrade />
+          </ClubVerificationGuard>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/club/reviews" element={
+        <ProtectedRoute requiredRole="club">
+          <ClubVerificationGuard>
+            <ClubReviews />
+          </ClubVerificationGuard>
+        </ProtectedRoute>
+      } />
       <Route path="/dashboard/club/credits" element={
+        <ProtectedRoute requiredRole="club">
+          <ClubVerificationGuard>
+            <ClubCredits />
+          </ClubVerificationGuard>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/club/credits/buy" element={
+        <ProtectedRoute requiredRole="club">
+          <ClubVerificationGuard>
+            <ClubCredits />
+          </ClubVerificationGuard>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/club/credits/history" element={
         <ProtectedRoute requiredRole="club">
           <ClubVerificationGuard>
             <ClubCredits />
@@ -304,7 +354,7 @@ function AppRoutes() {
       } />
       <Route path="/dashboard/club/settings" element={
         <ProtectedRoute requiredRole="club">
-          <ClubVerificationGuard allowSkipped={true}>
+          <ClubVerificationGuard>
             <ClubSettings />
           </ClubVerificationGuard>
         </ProtectedRoute>
@@ -415,6 +465,11 @@ function AppRoutes() {
               <FinancialDashboard />
             </AdminGuard>
           } />
+          <Route path="/admin/payouts" element={
+            <AdminGuard>
+              <AdminPayouts />
+            </AdminGuard>
+          } />
       <Route path="/admin/analytics" element={
         <AdminGuard>
           <Analytics />
@@ -427,6 +482,13 @@ function AppRoutes() {
       } />
       
       {/* Credit Store and History Routes */}
+      <Route path="/write-review/:ladyId" element={
+        <ProtectedRoute requiredRole="client">
+          <ClientVerificationGuard>
+            <WriteReview />
+          </ClientVerificationGuard>
+        </ProtectedRoute>
+      } />
       <Route path="/credit-store" element={
         <ProtectedRoute requiredRole="client">
           <CreditStore />

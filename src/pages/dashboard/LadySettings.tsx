@@ -208,6 +208,14 @@ export default function LadySettings() {
           });
 
           setGalleryImages(imageUrls);
+          // If there's no profile image yet, set the first gallery image as profile picture
+          if ((!profile.image_url || profile.image_url === '') && imageUrls.length > 0) {
+            try {
+              await updateProfile({ image_url: imageUrls[0] });
+            } catch (err) {
+              console.warn('Could not set first gallery image as profile picture on load:', err);
+            }
+          }
         }
       } catch (error) {
         console.error('Error fetching gallery images:', error);
@@ -235,7 +243,9 @@ export default function LadySettings() {
           .from('profile_details')
           .select('*')
           .eq('profile_id', profile.id)
-          .single();
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
         if (!detailsError && profileDetails) {
           Object.assign(updatedFormData, {
@@ -346,6 +356,7 @@ export default function LadySettings() {
         .from('profile_details')
         .upsert({
           profile_id: profile.id,
+          sex: formData.category === 'Ladies' ? 'female' : formData.category === 'Transsexuals' ? 'other' : 'female',
           category: formData.category,
           age: parseInt(formData.age) || null,
           height: parseInt(formData.height) || null,
@@ -861,6 +872,18 @@ export default function LadySettings() {
                               
                               // Update state - filter by base URL to handle cache-busting parameters
                               setGalleryImages(prev => prev.filter(url => !url.startsWith(baseUrl)));
+
+                              // If the deleted photo is the current profile image, switch to next available
+                              const currentProfileUrl = profile.image_url || '';
+                              if (currentProfileUrl && currentProfileUrl.startsWith(baseUrl)) {
+                                const remaining = galleryImages.filter(url => !url.startsWith(baseUrl));
+                                const nextBaseUrl = remaining[0]?.split('?')[0] || '';
+                                try {
+                                  await updateProfile({ image_url: nextBaseUrl || undefined });
+                                } catch (err) {
+                                  console.warn('Could not switch profile image after deletion:', err);
+                                }
+                              }
                               setPhotoMessage({text: 'Photo deleted successfully!', type: 'success'});
                               setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);
                             } catch (error) {
@@ -911,6 +934,14 @@ export default function LadySettings() {
                             
                             // Upload all files with watermark
                             const uploadedImages = await uploadMultipleImages(files, 'gallery-images', profile.id, profile.id);
+
+                            // Record uploads for admin moderation view
+                            try {
+                              const { ContentModerationService } = await import('../../services/contentModerationService');
+                              await ContentModerationService.recordUploadedImages(profile.id, uploadedImages);
+                            } catch (recErr) {
+                              console.warn('Failed to record uploaded images for moderation:', recErr);
+                            }
                             
                             // Clear the file input
                             e.target.value = '';
@@ -918,6 +949,18 @@ export default function LadySettings() {
                             // Update state with new URLs and add timestamp to prevent caching
                             const newUrls = uploadedImages.map(img => `${img.url}?t=${Date.now()}`);
                             setGalleryImages(prev => [...prev, ...newUrls]);
+
+                            // If this is the first gallery upload and no profile image yet, set it
+                            if ((!profile.image_url || profile.image_url === '') && uploadedImages.length > 0) {
+                              try {
+                                const primaryUrl = uploadedImages[0]?.url;
+                                if (primaryUrl) {
+                                  await updateProfile({ image_url: primaryUrl });
+                                }
+                              } catch (err) {
+                                console.warn('Could not set uploaded gallery image as profile picture:', err);
+                              }
+                            }
                             
                             setPhotoMessage({text: 'Gallery photos uploaded successfully!', type: 'success'});
                             setTimeout(() => setPhotoMessage({text: '', type: null}), 3000);

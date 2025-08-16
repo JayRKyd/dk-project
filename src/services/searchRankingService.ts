@@ -106,7 +106,7 @@ export async function searchRankedProfiles(
     const searchCoords = await getLocationCoordinates(searchLocation);
     
     // Build query
-    let query = supabase
+  let query = supabase
       .from('profiles')
       .select(`
         id,
@@ -122,10 +122,12 @@ export async function searchRankedProfiles(
         price,
         latitude,
         longitude,
-        user_id
+        user_id,
+        users!inner(is_blocked)
       `)
       .eq('role', 'lady')
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .eq('users.is_blocked', false);
 
     // Apply filters
     if (filters.rating) {

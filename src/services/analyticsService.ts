@@ -47,7 +47,7 @@ export const getAnalyticsData = async (): Promise<AnalyticsData> => {
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'client'),
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'club'),
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_verified', true),
-      supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_locked', true),
+      supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_blocked', true),
       supabase.from('profiles').select('*', { count: 'exact', head: true }),
       supabase.from('bookings').select('*', { count: 'exact', head: true }),
       supabase.from('reviews').select('*', { count: 'exact', head: true }),

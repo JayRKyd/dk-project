@@ -57,29 +57,26 @@ const formatTimeAgo = (dateString: string) => {
   return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
 };
 
-export default function ClubDashboard() {
+function ClubDashboard() {
   const { user } = useAuth();
   const [verificationStatus, setVerificationStatus] = React.useState<ClubVerificationStatus | null>(null);
   const [verificationLoading, setVerificationLoading] = React.useState(true);
   
-  const { 
-    clubProfile, 
-    stats, 
-    ladies, 
-    upcomingBookings, 
-    recentActivity, 
+  const {
+    clubProfile,
+    stats,
+    upcomingBookings,
+    recentActivity,
     notifications,
     credits,
-    creditSummary,
     profileCompletion,
     membershipStatus,
     membershipProgress,
     viewAnalytics,
     revenueData,
     loading,
-    errors,
     actions
-  } = useClubDashboard();
+  } = useClubDashboard() as any;
 
   // Load verification status
   React.useEffect(() => {
@@ -103,27 +100,7 @@ export default function ClubDashboard() {
     }
   };
 
-  // If no club profile exists, show creation prompt
-  if (!loading.profile && !clubProfile) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white rounded-xl shadow-sm p-8 text-center">
-          <Building2 className="h-16 w-16 text-pink-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Club Dashboard</h2>
-          <p className="text-gray-600 mb-6">
-            To get started, please complete your club profile setup.
-          </p>
-          <Link
-            to="/dashboard/club/settings"
-            className="inline-flex items-center gap-2 bg-pink-500 text-white px-6 py-3 rounded-lg hover:bg-pink-600 transition-colors"
-          >
-            <Settings className="h-5 w-5" />
-            <span>Complete Club Setup</span>
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  // Note: If no club profile exists, show a non-blocking banner instead of blocking the dashboard
 
   // Real data with fallbacks
   const displayStats = {
@@ -133,6 +110,9 @@ export default function ClubDashboard() {
     ladies: stats?.total_ladies || 0,
     nextBookings: stats?.upcoming_bookings || 0
   };
+
+  const creditsValue = typeof credits === 'number' ? credits : 0;
+  const profileCompletionSafe = (profileCompletion as any) || { percentage: 0, missing_fields: [] };
 
   // Calculate advertisement status
   const isAdvertisementActive = membershipProgress ? !membershipProgress.is_expired : false;
@@ -150,13 +130,23 @@ export default function ClubDashboard() {
     });
   };
 
+  const greetingName = (() => {
+    if (loading) return 'Loading...';
+    const clubName = clubProfile?.name && String(clubProfile.name).trim();
+    if (clubName) return clubName;
+    const meta = (user as any)?.user_metadata || {};
+    const metaName = meta.name || meta.display_name || meta.full_name;
+    if (metaName) return metaName;
+    return 'Club';
+  })();
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Welcome Section */}
       <div className="flex flex-col md:flex-row items-start justify-between mb-8 gap-6">
         <div className="flex items-center gap-6">
           <div className="relative group">
-            {loading.profile ? (
+            {loading ? (
               <div className="w-24 h-24 rounded-lg bg-gray-200 flex items-center justify-center">
                 <Loader className="h-8 w-8 text-pink-500 animate-spin" />
               </div>
@@ -176,19 +166,21 @@ export default function ClubDashboard() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              Welcome back, {loading.profile ? 'Loading...' : clubProfile?.name || 'Club Owner'}!
+              Welcome back, {greetingName}!
             </h1>
             <p className="text-gray-600">Here's what's happening with your club today.</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {clubProfile?.id && (
           <Link
-            to={`/clubs/${clubProfile?.id || '5'}`}
+            to={`/clubs/${clubProfile.id}`}
             className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg transition-colors mb-2 sm:mb-0"
           >
             <Eye className="h-5 w-5" />
             <span>View my Advertisement</span>
           </Link>
+          )}
           <Link
             to="/dashboard/club/settings"
             className="flex items-center gap-2 bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded-lg transition-colors mb-2 sm:mb-0"
@@ -207,6 +199,30 @@ export default function ClubDashboard() {
       </div>
 
       {/* Verification Reminder Banner */}
+      {/* Show setup banner if no profile, but do not block dashboard */}
+      {(!loading.profile && !clubProfile) && (
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center">
+                <Building2 className="h-6 w-6 text-pink-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Complete Club Setup</h3>
+                <p className="text-gray-600">Finish your club profile to unlock all features and improve visibility.</p>
+              </div>
+            </div>
+            <Link
+              to="/dashboard/club/settings"
+              className="inline-flex items-center gap-2 bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600 transition-colors"
+            >
+              <Settings className="h-5 w-5" />
+              <span>Go to Settings</span>
+            </Link>
+          </div>
+        </div>
+      )}
+
       {!verificationLoading && verificationStatus && verificationStatus.verification_status !== 'verified' && (
         <div className="bg-gradient-to-r from-pink-50 to-purple-50 border border-pink-200 rounded-xl p-6 mb-8">
           <div className="flex items-start justify-between">
@@ -274,10 +290,10 @@ export default function ClubDashboard() {
           </div>
           <div className="text-right">
             <div className="text-3xl font-bold">
-              {loading.credits ? (
+              {loading ? (
                 <Loader className="h-8 w-8 animate-spin inline" />
               ) : (
-                credits
+                creditsValue
               )}
             </div>
             <p className="text-pink-100 text-sm">Available Credits</p>
@@ -309,7 +325,7 @@ export default function ClubDashboard() {
             <Eye className="h-5 w-5 text-pink-500" />
           </div>
           <div className="text-2xl font-bold text-gray-900">
-            {loading.analytics ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.profileViews}
+            {loading ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.profileViews}
           </div>
         </div>
 
@@ -319,7 +335,7 @@ export default function ClubDashboard() {
             <Heart className="h-5 w-5 text-pink-500" />
           </div>
           <div className="text-2xl font-bold text-gray-900">
-            {loading.stats ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.loves}
+            {loading ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.loves}
           </div>
         </div>
 
@@ -329,7 +345,7 @@ export default function ClubDashboard() {
             <MessageCircle className="h-5 w-5 text-pink-500" />
           </div>
           <div className="text-2xl font-bold text-gray-900">
-            {loading.stats ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.reviews}
+            {loading ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.reviews}
           </div>
         </div>
 
@@ -339,7 +355,7 @@ export default function ClubDashboard() {
             <Calendar className="h-5 w-5 text-pink-500" />
           </div>
           <div className="text-2xl font-bold text-gray-900">
-            {loading.bookings ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.nextBookings}
+            {loading ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.nextBookings}
           </div>
         </div>
 
@@ -349,7 +365,7 @@ export default function ClubDashboard() {
             <Users className="h-5 w-5 text-pink-500" />
           </div>
           <div className="text-2xl font-bold text-gray-900">
-            {loading.stats ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.ladies}
+            {loading ? <Loader className="h-6 w-6 animate-spin" /> : displayStats.ladies}
           </div>
         </div>
       </div>
@@ -371,7 +387,7 @@ export default function ClubDashboard() {
               </div>
             </div>
             
-            {loading.membership ? (
+            {loading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader className="h-8 w-8 text-pink-500 animate-spin" />
                 <span className="ml-2 text-gray-600">Loading membership status...</span>
@@ -458,7 +474,7 @@ export default function ClubDashboard() {
               </Link>
             </div>
             <div className="space-y-4">
-              {loading.bookings ? (
+              {loading ? (
                 <div className="flex justify-center py-8">
                   <Loader className="h-6 w-6 text-pink-500 animate-spin" />
                 </div>
@@ -467,7 +483,7 @@ export default function ClubDashboard() {
                   No upcoming bookings
                 </div>
               ) : (
-                upcomingBookings.map((booking, index) => (
+                upcomingBookings.map((booking: any, index: number) => (
                   <div 
                     key={index}
                     className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-pink-50 transition-colors"
@@ -507,7 +523,7 @@ export default function ClubDashboard() {
               </Link>
             </div>
             <div className="space-y-4">
-              {loading.activity ? (
+              {loading ? (
                 <div className="flex justify-center py-8">
                   <Loader className="h-6 w-6 text-pink-500 animate-spin" />
                 </div>
@@ -516,7 +532,7 @@ export default function ClubDashboard() {
                   No recent activity
                 </div>
               ) : (
-                recentActivity.map((activity, index) => (
+                recentActivity.map((activity: any, index: number) => (
                   <div 
                     key={index}
                     className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-pink-50 transition-colors"
@@ -593,28 +609,28 @@ export default function ClubDashboard() {
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600">Profile Completion</span>
                   <span className="text-gray-900 font-medium">
-                    {loading.profile ? (
+                     {loading ? (
                       <Loader className="h-4 w-4 animate-spin inline" />
                     ) : (
-                      `${profileCompletion.percentage}%`
+                       `${profileCompletionSafe.percentage}%`
                     )}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div 
                     className="bg-pink-500 h-2 rounded-full transition-all" 
-                    style={{ width: `${profileCompletion.percentage}%` }}
+                    style={{ width: `${profileCompletionSafe.percentage}%` }}
                   ></div>
                 </div>
               </div>
               
-              {profileCompletion.missing_fields.length > 0 && (
+              {profileCompletionSafe.missing_fields.length > 0 && (
                 <div className="pt-4 border-t">
                   <h3 className="text-sm font-medium text-gray-900 mb-3">
                     Top Priority Missing Items:
                   </h3>
                   <ul className="space-y-2 text-sm text-gray-600">
-                    {profileCompletion.missing_fields.slice(0, 3).map((field, index) => (
+                    {profileCompletionSafe.missing_fields.slice(0, 3).map((field: any, index: number) => (
                       <li key={index} className="flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full ${
                           field.priority === 'high' ? 'bg-red-400' : 
@@ -640,7 +656,7 @@ export default function ClubDashboard() {
                 </div>
               )}
               
-              {profileCompletion.percentage === 100 && (
+              {profileCompletionSafe.percentage === 100 && (
                 <div className="pt-4 border-t">
                   <div className="flex items-center gap-2 text-green-600">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -661,7 +677,7 @@ export default function ClubDashboard() {
               <DollarSign className="h-5 w-5 text-green-500" />
             </div>
             
-            {loading.analytics ? (
+            {loading ? (
               <div className="flex justify-center py-8">
                 <Loader className="h-6 w-6 text-pink-500 animate-spin" />
               </div>
@@ -739,7 +755,7 @@ export default function ClubDashboard() {
                   No notifications
                 </div>
               ) : (
-                notifications.map((notification, index) => (
+                notifications.map((notification: any, index: number) => (
                   <div 
                     key={index} 
                     className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer ${
@@ -769,3 +785,5 @@ export default function ClubDashboard() {
     </div>
   );
 }
+
+export default ClubDashboard;

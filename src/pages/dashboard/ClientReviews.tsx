@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Star, Heart, ThumbsUp, ThumbsDown, Edit, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { clientDashboardService, Review } from '../../services/clientDashboardService';
+import { advancedReviewService } from '../../services/advancedReviewService';
 
 export default function ClientReviews() {
   const { user } = useAuth();
@@ -12,6 +13,12 @@ export default function ClientReviews() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState<{
+    rating: number;
+    positives: string[];
+    negatives: string[];
+  }>({ rating: 0, positives: [''], negatives: [''] });
 
   useEffect(() => {
     if (user?.id) {
@@ -127,6 +134,116 @@ export default function ClientReviews() {
     } catch (err: any) {
       console.error('Error deleting review:', err);
       alert(err.message || 'Failed to delete review');
+    } finally {
+      setActionLoading(prev => ({ ...prev, [reviewId]: false }));
+    }
+  };
+
+  const handleEditReview = async (reviewId: string) => {
+    if (!user?.id || actionLoading[reviewId]) return;
+    
+    try {
+      setActionLoading(prev => ({ ...prev, [reviewId]: true }));
+      
+      // Find the review to edit
+      const reviewToEdit = reviews.find(review => review.id === reviewId);
+      if (!reviewToEdit) {
+        throw new Error('Review not found.');
+      }
+      
+      // Initialize edit form with current review data
+      setEditFormData({
+        rating: reviewToEdit.rating,
+        positives: reviewToEdit.positives.length > 0 ? [...reviewToEdit.positives] : [''],
+        negatives: reviewToEdit.negatives.length > 0 ? [...reviewToEdit.negatives] : [''],
+      });
+      
+      // Set editing mode
+      setEditingReviewId(reviewId);
+    } catch (err: any) {
+      console.error('Error preparing review for editing:', err);
+      alert(err.message || 'Failed to prepare review for editing');
+    } finally {
+      setActionLoading(prev => ({ ...prev, [reviewId]: false }));
+    }
+  };
+
+  const handleEditFormChange = (field: 'rating' | 'positives' | 'negatives', value: any, index?: number) => {
+    if (field === 'rating') {
+      setEditFormData(prev => ({ ...prev, rating: value }));
+    } else if (field === 'positives' || field === 'negatives') {
+      if (index === undefined) return;
+      setEditFormData(prev => ({
+        ...prev,
+        [field]: prev[field].map((item, i) => i === index ? value : item)
+      }));
+    }
+  };
+
+  const addEditPoint = (type: 'positives' | 'negatives') => {
+    setEditFormData(prev => ({
+      ...prev,
+      [type]: [...prev[type], '']
+    }));
+  };
+
+  const removeEditPoint = (type: 'positives' | 'negatives', index: number) => {
+    setEditFormData(prev => ({
+      ...prev,
+      [type]: prev[type].filter((_, i) => i !== index)
+    }));
+  };
+
+  const cancelEdit = () => {
+    setEditingReviewId(null);
+    setEditFormData({ rating: 0, positives: [''], negatives: [''] });
+  };
+
+  const saveEdit = async (reviewId: string) => {
+    if (!user?.id || actionLoading[reviewId]) return;
+    
+    try {
+      setActionLoading(prev => ({ ...prev, [reviewId]: true }));
+      
+      // Validate form data
+      if (editFormData.rating < 1 || editFormData.rating > 10) {
+        throw new Error('Rating must be between 1 and 10.');
+      }
+      
+      const validPositives = editFormData.positives.filter(p => p.trim());
+      const validNegatives = editFormData.negatives.filter(n => n.trim());
+      
+      if (validPositives.length === 0) {
+        throw new Error('Please provide at least one positive point.');
+      }
+      
+      // Call advancedReviewService to edit the review
+      await advancedReviewService.editReview(reviewId, {
+        rating: editFormData.rating,
+        positives: validPositives,
+        negatives: validNegatives,
+      });
+      
+      // Update local state
+      setReviews(prev => prev.map(review => 
+        review.id === reviewId 
+          ? { 
+              ...review, 
+              rating: editFormData.rating,
+              positives: validPositives,
+              negatives: validNegatives,
+            }
+          : review
+      ));
+      
+      // Exit edit mode
+      setEditingReviewId(null);
+      setEditFormData({ rating: 0, positives: [''], negatives: [''] });
+      
+      alert('Review updated successfully.');
+    } catch (err: any) {
+      console.error('Error updating review:', err);
+      alert(err.message || 'Failed to update review');
     } finally {
       setActionLoading(prev => ({ ...prev, [reviewId]: false }));
     }
@@ -345,33 +462,154 @@ export default function ClientReviews() {
               )}
 
               {/* Review Actions */}
-              <div className="p-6 bg-gray-50 flex justify-end gap-4">
-                <Link
-                  to={`/write-review/${review.lady.name.toLowerCase()}`}
-                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-                >
-                  <Edit className="h-5 w-5" />
-                  <span>Edit Review</span>
-                </Link>
-                <button 
-                  onClick={() => handleDeleteReview(review.id, review.lady.name)}
-                  disabled={isActionLoading}
-                  className={`flex items-center gap-2 text-red-500 hover:text-red-600 ${
-                    isActionLoading ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                >
-                  {isActionLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-5 w-5" />
-                  )}
-                  <span>Delete Review</span>
-                </button>
+              <div className="p-6 bg-gray-50">
+                {editingReviewId === review.id ? (
+                  // Edit Form
+                  <div className="space-y-4">
+                    <h3 className="font-medium text-gray-900">Edit Your Review</h3>
+                    
+                    {/* Rating */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Rating (1-10)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={editFormData.rating}
+                        onChange={(e) => handleEditFormChange('rating', parseInt(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500"
+                      />
+                    </div>
+                    
+                    {/* Positive Points */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        What did you like?
+                      </label>
+                      {editFormData.positives.map((point, index) => (
+                        <div key={`edit-positive-${index}`} className="flex gap-2 mb-2">
+                          <input
+                            type="text"
+                            value={point}
+                            onChange={(e) => handleEditFormChange('positives', e.target.value, index)}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500"
+                            placeholder="Something you liked about this lady"
+                          />
+                          {editFormData.positives.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeEditPoint('positives', index)}
+                              className="px-3 py-2 text-red-500 hover:text-red-700"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => addEditPoint('positives')}
+                        className="text-sm text-pink-500 hover:text-pink-700"
+                      >
+                        + Add another positive point
+                      </button>
+                    </div>
+                    
+                    {/* Negative Points */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        What could be improved?
+                      </label>
+                      {editFormData.negatives.map((point, index) => (
+                        <div key={`edit-negative-${index}`} className="flex gap-2 mb-2">
+                          <input
+                            type="text"
+                            value={point}
+                            onChange={(e) => handleEditFormChange('negatives', e.target.value, index)}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500"
+                            placeholder="Something that could be improved"
+                          />
+                          {editFormData.negatives.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeEditPoint('negatives', index)}
+                              className="px-3 py-2 text-red-500 hover:text-red-700"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => addEditPoint('negatives')}
+                        className="text-sm text-pink-500 hover:text-pink-700"
+                      >
+                        + Add another negative point
+                      </button>
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex justify-end gap-3 pt-4">
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        className="px-4 py-2 text-gray-700 hover:text-gray-900"
+                        disabled={isActionLoading}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => saveEdit(review.id)}
+                        disabled={isActionLoading}
+                        className="px-4 py-2 bg-pink-500 text-white rounded-md hover:bg-pink-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isActionLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+                            Saving...
+                          </>
+                        ) : (
+                          'Save Changes'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // Action Buttons
+                  <div className="flex justify-end gap-4">
+                    <button
+                      onClick={() => handleEditReview(review.id)}
+                      disabled={isActionLoading}
+                      className="flex items-center gap-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Edit className="h-5 w-5" />
+                      <span>Edit Review</span>
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteReview(review.id, review.lady.name)}
+                      disabled={isActionLoading}
+                      className={`flex items-center gap-2 text-red-500 hover:text-red-600 ${
+                        isActionLoading ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      {isActionLoading ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-5 w-5" />
+                      )}
+                      <span>Delete Review</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
-
+        
         {reviews.length === 0 && (
           <div className="text-center py-12 bg-white rounded-xl shadow-sm">
             <Star className="h-12 w-12 text-gray-400 mx-auto mb-4" />

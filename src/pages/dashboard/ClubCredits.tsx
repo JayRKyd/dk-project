@@ -95,6 +95,17 @@ const ClubCredits: React.FC = () => {
     loadTransactions();
   }, [clubProfile]);
 
+  // Respect ?tab=buy|history
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'history') {
+      setShowTransactionHistory(true);
+    } else if (tab === 'buy') {
+      setShowTransactionHistory(false);
+    }
+  }, []);
+
   const loadTransactions = async () => {
     if (!clubProfile) return;
 

@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Heart, MessageCircle, Lock, X, Coins, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
+import { fanPostsService } from '../services/fanPostsService';
+import { supabase } from '../lib/supabase';
+import { clientDashboardService } from '../services/clientDashboardService';
 
 interface FanPost {
   id: string;
@@ -16,6 +19,7 @@ interface FanPost {
   likes: number;
   comments: number;
   isPremium: boolean;
+  unlockPrice?: number;
   commentsList?: {
     authorName: string;
     authorImage: string;
@@ -285,28 +289,111 @@ export default function FanPosts() {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const { name } = useParams();
+  const [posts, setPosts] = useState<FanPost[]>([]);
+  const [author, setAuthor] = useState<{ authorName: string; authorImage: string } | null>(null);
+  const [sortBy, setSortBy] = useState<'newest' | 'liked'>('newest');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        // If viewing a particular author by name, try to resolve their profile
+        let authorUserId: string | null = null;
+        if (name) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('user_id, name, image_url')
+            .ilike('name', name)
+            .maybeSingle();
+          if (profile) {
+            authorUserId = profile.user_id;
+            setAuthor({ authorName: profile.name, authorImage: profile.image_url || '' });
+          }
+        }
+        // Fetch posts
+        if (authorUserId) {
+          const rows = await fanPostsService.getFanPostsByAuthor(authorUserId);
+          // Check if author hides fan posts
+          const { data: vis } = await supabase
+            .from('profiles')
+            .select('hide_fan_posts')
+            .eq('user_id', authorUserId)
+            .maybeSingle();
+          const hidden = Boolean(vis?.hide_fan_posts);
+          setPosts(hidden ? [] : rows.map(r => ({
+            id: r.id,
+            authorName: author?.authorName || name || 'Unknown',
+            authorImage: author?.authorImage || '',
+            date: r.date,
+            content: r.content,
+            contentAmount: r.contentAmount,
+            imageUrl: r.imageUrl,
+            likes: r.likes,
+            comments: r.comments,
+            isPremium: r.isPremium,
+            unlockPrice: (r as any).unlockPrice || 0,
+          })));
+        } else {
+          // No name provided: show all posts from everyone
+          const rows = await fanPostsService.getAllFanPosts();
+          setPosts(rows.map(r => ({
+            id: r.id,
+            authorName: r.authorName,
+            authorImage: r.authorImage,
+            date: r.date,
+            content: r.content,
+            contentAmount: r.contentAmount,
+            imageUrl: r.imageUrl,
+            likes: r.likes,
+            comments: r.comments,
+            isPremium: r.isPremium,
+            unlockPrice: (r as any).unlockPrice || 0,
+          })));
+        }
+
+        // Load unlocked post ids for current user
+        try {
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          if (authUser?.id) {
+            const ids = await clientDashboardService.getUnlockedFanPostIds(authUser.id);
+            setUnlockedIds(ids);
+          } else {
+            setUnlockedIds([]);
+          }
+        } catch {}
+      } catch (e) {
+        console.error('Error loading fan posts page:', e);
+        setPosts([]);
+      }
+    };
+    load();
+  }, [name]);
 
   // Filter posts by author name if provided
-  const filteredPosts = (name 
-    ? samplePosts.filter(post => post.authorName.toLowerCase() === name.toLowerCase()) 
-    : samplePosts)
-    .sort((a, b) => {
-      // Convert relative time strings to comparable values
+  const filteredPosts = useMemo(() => {
+    const base = name 
+      ? posts.filter(post => post.authorName.toLowerCase() === (author?.authorName || name).toLowerCase()) 
+      : posts;
+    const sorted = [...base].sort((a, b) => {
+      if (sortBy === 'liked') {
+        return b.likes - a.likes;
+      }
+      // newest by relative time (fallback heuristic)
       const getMinutes = (timeStr: string) => {
-        if (timeStr.includes('hour')) {
-          return parseInt(timeStr) * 60;
-        } else if (timeStr.includes('day')) {
-          return parseInt(timeStr) * 24 * 60;
-        } else {
-          return 0; // For any other format, treat as most recent
-        }
+        if (timeStr.includes('hour')) return parseInt(timeStr) * 60;
+        if (timeStr.includes('day')) return parseInt(timeStr) * 24 * 60;
+        return 0;
       };
-      
       return getMinutes(a.date) - getMinutes(b.date);
     });
+    const start = (page - 1) * pageSize;
+    return sorted.slice(start, start + pageSize);
+  }, [posts, name, author, sortBy, page]);
 
   // Get author info if viewing specific author's posts
-  const author = name && samplePosts.find(post => post.authorName.toLowerCase() === name.toLowerCase());
+  const resolvedAuthor = author || (name ? { authorName: name, authorImage: '' } : null);
 
   const handleUnlock = (post: FanPost) => {
     setSelectedPost(post);
@@ -333,22 +420,37 @@ export default function FanPosts() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
-      {author ? (
+      {/* Controls */}
+      <div className="flex items-center justify-between mb-6">
+        <div />
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600">Sort by</label>
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={sortBy}
+            onChange={(e) => { setPage(1); setSortBy(e.target.value as any); }}
+          >
+            <option value="newest">Newest</option>
+            <option value="liked">Most liked</option>
+          </select>
+        </div>
+      </div>
+      {resolvedAuthor ? (
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-8 text-center sm:text-left">
           <img
-            src={author.authorImage}
-            alt={author.authorName}
+            src={resolvedAuthor.authorImage}
+            alt={resolvedAuthor.authorName}
             className="w-16 h-16 rounded-full object-cover ring-4 ring-pink-100"
           />
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900">{author.authorName}'s Fan Posts</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{resolvedAuthor.authorName}'s Fan Posts</h1>
             <p className="text-gray-600">Subscribe to see all exclusive content</p>
           </div>
           <Link
-            to={`/ladies/${author.authorName.toLowerCase()}`}
+            to={`/ladies/${resolvedAuthor.authorName.toLowerCase()}`}
             className="w-full sm:w-auto bg-pink-500 hover:bg-pink-600 transition-colors text-white px-4 py-2 rounded-lg text-center mt-4 sm:mt-0"
           >
-            Subscribe to {author.authorName}
+            Subscribe to {resolvedAuthor.authorName}
           </Link>
         </div>
       ) : (
@@ -431,7 +533,7 @@ export default function FanPosts() {
                   <img
                     src={post.additionalImages ? post.additionalImages[selectedPhotoIndex] : post.imageUrl}
                     alt="Post content"
-                    className={`w-full h-[400px] object-cover ${post.isPremium ? 'blur-[8px]' : ''}`}
+                    className={`w-full h-[400px] object-cover ${post.isPremium && !unlockedIds.includes(post.id) ? 'blur-[8px]' : ''}`}
                   />
                 </div>
                 
@@ -456,7 +558,7 @@ export default function FanPosts() {
                   </div>
                 )}
 
-                {post.isPremium && (
+                {post.isPremium && !unlockedIds.includes(post.id) && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center backdrop-blur-none">
                     <div className="space-y-2">
                       <div className="bg-black/50 backdrop-blur-none px-6 py-3 rounded-lg text-center">
@@ -472,7 +574,7 @@ export default function FanPosts() {
                         onClick={() => handleUnlock(post)}
                         className="bg-pink-500 hover:bg-pink-600 transition-colors text-white px-6 py-2 rounded-lg font-medium mx-auto block"
                       >
-                       {post.authorName === 'Alexandra' ? '4' : '10'} DK Credits
+                       {(post as any).unlockPrice || 0} DK Credits
                       </button>
                     </div>
                   </div>
@@ -539,6 +641,25 @@ export default function FanPosts() {
         ))}
       </div>
 
+      {/* Pagination */}
+      <div className="flex items-center justify-between mt-8">
+        <button
+          className="px-3 py-1 border rounded disabled:opacity-50"
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          disabled={page === 1}
+        >
+          Prev
+        </button>
+        <div className="text-sm text-gray-600">Page {page}</div>
+        <button
+          className="px-3 py-1 border rounded disabled:opacity-50"
+          onClick={() => setPage(p => (posts.length > page * pageSize ? p + 1 : p))}
+          disabled={posts.length <= page * pageSize}
+        >
+          Next
+        </button>
+      </div>
+
       {/* Unlock Modal */}
       {showUnlockModal && selectedPost && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -568,14 +689,22 @@ export default function FanPosts() {
             <div className="bg-pink-50 rounded-lg p-4 mb-6">
               <div className="flex items-center justify-center gap-2 text-xl font-bold text-pink-500">
                 <Coins className="w-6 h-6" />
-                <span>{selectedPost.authorName === 'Alexandra' ? '4' : '10'} DK Credits</span>
+                <span>{selectedPost.isPremium ? (selectedPost as any).unlockPrice || 0 : 0} DK Credits</span>
               </div>
             </div>
 
             <button
-              onClick={() => {
-                // Handle unlock logic here
-                setShowUnlockModal(false);
+              onClick={async () => {
+                try {
+                  const { data: { user } } = await supabase.auth.getUser();
+                  if (!user) throw new Error('Please log in');
+                  await clientDashboardService.unlockFanPost(user.id, selectedPost.id);
+                  setShowUnlockModal(false);
+                  // reflect unlock immediately
+                  setUnlockedIds(prev => Array.from(new Set([...prev, selectedPost.id])));
+                } catch (e: any) {
+                  alert(e?.message || 'Failed to unlock');
+                }
               }}
               className="w-full bg-pink-500 text-white py-3 rounded-lg hover:bg-pink-600 transition-colors font-medium"
             >

@@ -3,11 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft,
   Camera,
-  Plus,
   Star,
   X,
   Calendar,
-  Clock,
   DollarSign,
   Loader2,
   Check,
@@ -15,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useClubDashboard } from '../../hooks/useClubDashboard';
 import { clubSettingsService } from '../../services/clubSettingsService';
+import { uploadMultipleImages } from '../../services/imageService';
 
 interface PromoForm {
   title: string;
@@ -30,7 +29,7 @@ interface PromoForm {
 const PROMO_CREDIT_COST = 25; // Cost in credits to create a promotion
 
 export default function ClubPromo() {
-  const { clubProfile, credits, actions } = useClubDashboard();
+  const { clubProfile, credits, actions } = useClubDashboard() as any;
   const navigate = useNavigate();
   
   const [formData, setFormData] = useState<PromoForm>({
@@ -167,9 +166,21 @@ export default function ClubPromo() {
       
       // Create promotion in database
       const promotion = await clubSettingsService.createClubPromotion(clubProfile.id, promotionData);
-      
-      // TODO: Handle image upload to Supabase Storage here
-      // For now, we'll skip image upload but the structure is ready
+
+      // Upload images to storage under promo-images/{clubId}/{promotionId}
+      if (formData.images.length > 0) {
+        const uploads = await uploadMultipleImages(
+          formData.images,
+          'promo-images',
+          `${promotion.id}`,
+          clubProfile.id
+        );
+        // Use first image as main image_url
+        const mainUrl = uploads[0]?.url;
+        if (mainUrl) {
+          await clubSettingsService.updateClubPromotion(promotion.id, { image_url: mainUrl });
+        }
+      }
       
       // Spend credits
       await actions.spendCredits(PROMO_CREDIT_COST, `Promotion created: ${formData.title}`);
@@ -214,12 +225,12 @@ export default function ClubPromo() {
               <CreditCard className="h-5 w-5 text-blue-600" />
               <span className="text-sm font-medium text-blue-900">Your DK Credits</span>
             </div>
-            <div className="text-lg font-bold text-blue-600">{credits}</div>
+           <div className="text-lg font-bold text-blue-600">{credits?.balance ?? 0}</div>
           </div>
           <div className="text-sm text-blue-600 mt-1">
-            {credits >= PROMO_CREDIT_COST 
-              ? `You'll have ${credits - PROMO_CREDIT_COST} credits after creating this promotion`
-              : `You need ${PROMO_CREDIT_COST - credits} more credits to create this promotion`
+            { (credits?.balance ?? 0) >= PROMO_CREDIT_COST 
+              ? `You'll have ${(credits?.balance ?? 0) - PROMO_CREDIT_COST} credits after creating this promotion`
+              : `You need ${PROMO_CREDIT_COST - (credits?.balance ?? 0)} more credits to create this promotion`
             }
           </div>
         </div>
@@ -428,7 +439,7 @@ export default function ClubPromo() {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isSubmitting || credits < PROMO_CREDIT_COST}
+            disabled={isSubmitting || (credits?.balance ?? 0) < PROMO_CREDIT_COST}
             className="w-full bg-pink-500 text-white px-8 py-3 rounded-lg hover:bg-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
           >
             {isSubmitting ? (
@@ -444,7 +455,7 @@ export default function ClubPromo() {
             )}
           </button>
           
-          {credits < PROMO_CREDIT_COST && (
+          {(credits?.balance ?? 0) < PROMO_CREDIT_COST && (
             <Link
               to="/dashboard/club/credits"
               className="block w-full bg-blue-500 text-white px-8 py-3 rounded-lg hover:bg-blue-600 transition-colors font-medium text-center"
@@ -474,7 +485,7 @@ export default function ClubPromo() {
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Insufficient Credits</h3>
             <p className="text-gray-600 mb-6">
-              You need {PROMO_CREDIT_COST} DK Credits to create a promotion. You currently have {credits} credits.
+              You need {PROMO_CREDIT_COST} DK Credits to create a promotion. You currently have {credits?.balance ?? 0} credits.
             </p>
             <div className="flex gap-4">
               <button

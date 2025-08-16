@@ -8,6 +8,7 @@ export interface UserWithProfile {
   membership_tier: 'FREE' | 'PRO';
   is_verified: boolean;
   is_blocked: boolean;
+  client_number?: string | null;
   created_at: string;
   last_login?: string;
   profile?: {
@@ -33,6 +34,7 @@ export const adminUserService = {
           membership_tier,
           is_verified,
           is_blocked,
+          client_number,
           created_at,
           last_login,
           profiles (
@@ -56,6 +58,7 @@ export const adminUserService = {
         membership_tier: user.membership_tier,
         is_verified: user.is_verified,
         is_blocked: user.is_blocked || false,
+        client_number: user.client_number || null,
         created_at: user.created_at,
         last_login: user.last_login,
         profile: user.profiles?.[0] ? {
@@ -71,19 +74,84 @@ export const adminUserService = {
   },
 
   /**
+   * Paged users with optional search
+   */
+  async getUsers(params: { page: number; pageSize: number; search?: string }): Promise<{ rows: UserWithProfile[]; total: number }> {
+    const { page, pageSize, search } = params;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    try {
+      let query = supabase
+        .from('users')
+        .select(`
+          id,
+          email,
+          username,
+          role,
+          membership_tier,
+          is_verified,
+          is_blocked,
+          client_number,
+          created_at,
+          last_login,
+          profiles (
+            name,
+            location,
+            image_url
+          )
+        `, { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (search && search.trim().length > 0) {
+        const s = `%${search.trim()}%`;
+        // Search in username, email, role, and client_number
+        query = query.or(
+          `username.ilike.${s},email.ilike.${s},role.ilike.${s},client_number.ilike.${s}`
+        );
+      }
+
+      const { data, error, count } = await query;
+      if (error) {
+        console.error('Error fetching paged users:', error);
+        throw new Error('Failed to fetch users');
+      }
+
+      const rows: UserWithProfile[] = (data || []).map((user: any) => ({
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        membership_tier: user.membership_tier,
+        is_verified: user.is_verified,
+        is_blocked: user.is_blocked || false,
+        client_number: user.client_number || null,
+        created_at: user.created_at,
+        last_login: user.last_login,
+        profile: user.profiles?.[0] ? {
+          name: user.profiles[0].name,
+          location: user.profiles[0].location,
+          image_url: user.profiles[0].image_url
+        } : undefined
+      }));
+
+      return { rows, total: count || 0 };
+    } catch (error) {
+      console.error('Error in getUsers:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Block a user
    */
   async blockUser(userId: string): Promise<void> {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) {
-        throw new Error('Admin authentication required');
-      }
+      if (!currentUser) throw new Error('Admin authentication required');
 
-      const { error } = await supabase
-        .from('users')
-        .update({ is_blocked: true })
-        .eq('id', userId);
+      // Block at auth level and mark in users table
+      const { error } = await supabase.rpc('admin_block_user', { p_user_id: userId });
 
       if (error) {
         console.error('Error blocking user:', error);
@@ -111,14 +179,9 @@ export const adminUserService = {
   async unblockUser(userId: string): Promise<void> {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) {
-        throw new Error('Admin authentication required');
-      }
+      if (!currentUser) throw new Error('Admin authentication required');
 
-      const { error } = await supabase
-        .from('users')
-        .update({ is_blocked: false })
-        .eq('id', userId);
+      const { error } = await supabase.rpc('admin_unblock_user', { p_user_id: userId });
 
       if (error) {
         console.error('Error unblocking user:', error);

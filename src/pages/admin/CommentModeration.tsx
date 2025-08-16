@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { ContentModerationService, Comment } from '../../services/contentModerationService';
 import { format } from 'date-fns';
-import { MessageSquare, AlertCircle, CheckCircle, Trash2, Eye, EyeOff } from 'lucide-react';
+import { MessageSquare, AlertCircle, CheckCircle, Trash2, EyeOff } from 'lucide-react';
 
 const CommentModeration: React.FC = () => {
   const [comments, setComments] = useState<Comment[]>([]);
+  const [summary, setSummary] = useState<{ user_id: string; username: string; email: string; role: string; count: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState({
@@ -22,10 +23,12 @@ const CommentModeration: React.FC = () => {
 
   const loadComments = async () => {
     setLoading(true);
-    const { comments: items, error } = await ContentModerationService.getComments(page, 20, filters);
-    if (!error && items) {
-      setComments(items);
-    }
+    const [{ comments: items }, summaryResp] = await Promise.all([
+      ContentModerationService.getComments(page, 20, filters),
+      ContentModerationService.getCommentSummaryByUser(page, 25, { content_type: filters.content_type, moderation_status: filters.moderation_status })
+    ]);
+    setComments(items || []);
+    if (!summaryResp.error) setSummary(summaryResp.rows);
     setLoading(false);
   };
 
@@ -36,15 +39,37 @@ const CommentModeration: React.FC = () => {
       return;
     }
 
-    const { error } = await ContentModerationService.moderateContent(
-      'comment',
-      selectedComment.id,
-      action,
-      moderationReason
-    );
+    // Gift replies live in gift_replies; delete action should remove the reply row directly
+    let error = null as any;
+    if (selectedComment.content_type === 'gift') {
+      // Currently support delete for gift replies; others can be added via RPC if needed
+      if (action !== 'delete') {
+        alert('Only Delete is supported for gift replies at the moment.');
+        return;
+      }
+      const res = await ContentModerationService.deleteGiftReply(selectedComment.id);
+      error = res.error;
+      if (!error) {
+        alert('Gift reply deleted successfully');
+        setSelectedComment(null);
+        setModerationReason('');
+        loadComments();
+      } else {
+        alert('Error deleting gift reply: ' + error.message);
+      }
+      return;
+    } else {
+      const resp = await ContentModerationService.moderateContent(
+        'comment',
+        selectedComment.id,
+        action,
+        moderationReason
+      );
+      error = resp.error;
+    }
 
     if (!error) {
-      alert('Comment moderated successfully');
+      alert('Content moderated successfully');
       setSelectedComment(null);
       setModerationReason('');
       loadComments();
@@ -103,6 +128,82 @@ const CommentModeration: React.FC = () => {
                 <option value="rejected">Rejected</option>
               </select>
             </div>
+          </div>
+        </div>
+
+        {/* Summary by User */}
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Comments/Reviews by User</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr className="text-left text-sm text-gray-600">
+                  <th className="py-2 px-3">User</th>
+                  <th className="py-2 px-3">Email</th>
+                  <th className="py-2 px-3">Role</th>
+                  <th className="py-2 px-3">Total</th>
+                  <th className="py-2 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.map(row => (
+                  <tr key={row.user_id} className="border-t">
+                    <td className="py-2 px-3">{row.username}</td>
+                    <td className="py-2 px-3">{row.email}</td>
+                    <td className="py-2 px-3 capitalize">{row.role}</td>
+                    <td className="py-2 px-3">{row.count}</td>
+                    <td className="py-2 px-3 text-right space-x-3">
+                      <button
+                        className="text-pink-600 hover:underline"
+                        onClick={async () => {
+                          setLoading(true);
+                          const { comments: items } = await ContentModerationService.getComments(1, 20, { ...filters, user_id: row.user_id as any });
+                          setComments(items);
+                          setLoading(false);
+                        }}
+                      >
+                        View comments
+                      </button>
+                      <button
+                        className="text-blue-600 hover:underline"
+                        onClick={async () => {
+                          setLoading(true);
+                          // fetch reviews for author
+                          const { supabase } = await import('../../lib/supabase');
+                          const { data, error } = await supabase
+                            .from('reviews')
+                            .select('id, created_at, content, rating, moderation_status')
+                            .eq('author_id', row.user_id)
+                            .order('created_at', { ascending: false })
+                            .limit(20);
+                          if (!error && data) {
+                            // map reviews into comment-like structure for display reuse
+                            const mapped = data.map((r: any) => ({
+                              id: r.id,
+                              user_id: row.user_id,
+                              content_type: 'review',
+                              content_id: r.id,
+                              comment: r.content || `(rating ${r.rating})`,
+                              status: 'active',
+                              moderation_status: r.moderation_status || 'pending',
+                              created_at: r.created_at,
+                              updated_at: r.created_at
+                            }));
+                            setComments(mapped as any);
+                          }
+                          setLoading(false);
+                        }}
+                      >
+                        View reviews
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {summary.length === 0 && (
+                  <tr><td colSpan={5} className="py-6 text-gray-500">No comments found</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 

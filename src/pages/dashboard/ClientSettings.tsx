@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Key, XCircle, AlertTriangle, Shield, Bell } from 'lucide-react';
+import { ArrowLeft, Key, XCircle, AlertTriangle, Shield, Bell, Camera } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
+import { uploadImage } from '../../services/imageService';
 
 export default function ClientSettings() {
+  const { user } = useAuth();
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUsernameForm, setShowUsernameForm] = useState(false);
@@ -15,6 +19,25 @@ export default function ClientSettings() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.user_metadata?.avatar_url || null);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.id) return;
+    try {
+      setUploadingAvatar(true);
+      const uploaded = await uploadImage(file, 'profile-pictures', 'avatars', user.id);
+      // Save to profiles.image_url
+      await supabase.from('profiles').upsert({ user_id: user.id, image_url: uploaded.url }, { onConflict: 'user_id' });
+      setAvatarUrl(uploaded.url);
+    } catch (err) {
+      console.error('Avatar upload failed', err);
+      alert('Failed to upload image');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const handlePasswordChange = (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +95,21 @@ export default function ClientSettings() {
         <h2 className="text-lg font-bold text-gray-900 mb-6">Account Details</h2>
         
         <div className="space-y-6">
+          {/* Profile Photo */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-4">
+              <img src={avatarUrl || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80'} alt="Avatar" className="w-16 h-16 rounded-full object-cover ring-4 ring-pink-100" />
+              <div>
+                <h3 className="font-medium text-gray-900">Profile Photo</h3>
+                <p className="text-gray-600">Upload one picture for your client profile</p>
+              </div>
+            </div>
+            <label className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2 cursor-pointer">
+              <Camera className="h-5 w-5" />
+              <span>{uploadingAvatar ? 'Uploading...' : 'Change Photo'}</span>
+              <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
+            </label>
+          </div>
           {/* Client Number */}
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
             <div>
@@ -268,95 +306,13 @@ export default function ClientSettings() {
           </div>
           <div>
             <h2 className="text-lg font-bold text-gray-900">Notification Settings</h2>
-            <p className="text-gray-600">Control what notifications you receive</p>
+            <p className="text-gray-600">Control what in‑app notifications you receive</p>
           </div>
         </div>
 
         <div className="space-y-6">
-          {/* Email Notifications */}
-          <div>
-            <h3 className="font-medium text-gray-900 mb-4">Email Notifications</h3>
-            <div className="space-y-4">
-              <label className="flex items-center justify-between">
-                <span className="text-gray-700">Booking confirmations</span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                />
-              </label>
-              <label className="flex items-center justify-between">
-                <span className="text-gray-700">Booking reminders</span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                />
-              </label>
-              <label className="flex items-center justify-between">
-                <span className="text-gray-700">Review replies</span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                />
-              </label>
-              <label className="flex items-center justify-between">
-                <span className="text-gray-700">Gift replies</span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                />
-              </label>
-              <label className="flex items-center justify-between">
-                <span className="text-gray-700">Marketing emails</span>
-                <input
-                  type="checkbox"
-                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                />
-              </label>
-            </div>
-          </div>
-
-          {/* Push Notifications */}
-          <div className="border-t pt-6">
-            <h3 className="font-medium text-gray-900 mb-4">Push Notifications</h3>
-            <div className="space-y-4">
-              <label className="flex items-center justify-between">
-                <span className="text-gray-700">New messages</span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                />
-              </label>
-              <label className="flex items-center justify-between">
-                <span className="text-gray-700">Booking updates</span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                />
-              </label>
-              <label className="flex items-center justify-between">
-                <span className="text-gray-700">Review replies</span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                />
-              </label>
-              <label className="flex items-center justify-between">
-                <span className="text-gray-700">New fan posts from favorites</span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                />
-              </label>
-            </div>
-          </div>
+          {/* In‑app notification toggles (persisted) */}
+          <InAppNotificationToggles />
         </div>
       </div>
 
@@ -457,6 +413,82 @@ export default function ClientSettings() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function InAppNotificationToggles() {
+  const { user } = useAuth();
+  const [settings, setSettings] = useState({
+    booking_confirmations: true,
+    booking_reminders: true,
+    review_replies: true,
+    gift_replies: true,
+    messages: true,
+    booking_updates: true,
+    fan_posts_from_favorites: true,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!user?.id) return;
+      const { data } = await supabase
+        .from('user_notification_settings')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (data) {
+        setSettings({
+          booking_confirmations: data.booking_confirmations,
+          booking_reminders: data.booking_reminders,
+          review_replies: data.review_replies,
+          gift_replies: data.gift_replies,
+          messages: data.messages,
+          booking_updates: data.booking_updates,
+          fan_posts_from_favorites: data.fan_posts_from_favorites,
+        });
+      }
+      setLoading(false);
+    };
+    load();
+  }, [user?.id]);
+
+  const update = async (key: keyof typeof settings, value: boolean) => {
+    if (!user?.id) return;
+    const next = { ...settings, [key]: value };
+    setSettings(next);
+    // upsert row
+    await supabase.from('user_notification_settings').upsert({
+      user_id: user.id,
+      ...next,
+      updated_at: new Date().toISOString(),
+    });
+  };
+
+  const Row = ({ label, k }: { label: string; k: keyof typeof settings }) => (
+    <label className="flex items-center justify-between">
+      <span className="text-gray-700">{label}</span>
+      <input
+        type="checkbox"
+        checked={settings[k]}
+        onChange={(e) => update(k, e.target.checked)}
+        className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+      />
+    </label>
+  );
+
+  if (loading) return <div className="text-gray-500">Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <Row label="Booking confirmations" k="booking_confirmations" />
+      <Row label="Booking reminders" k="booking_reminders" />
+      <Row label="Review replies" k="review_replies" />
+      <Row label="Gift replies" k="gift_replies" />
+      <Row label="New messages" k="messages" />
+      <Row label="Booking updates" k="booking_updates" />
+      <Row label="New fan posts from favorites" k="fan_posts_from_favorites" />
     </div>
   );
 }

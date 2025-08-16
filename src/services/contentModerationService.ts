@@ -47,6 +47,107 @@ export interface Comment {
 
 export class ContentModerationService {
   /**
+   * Summary of comments/reviews by user with counts
+   */
+  static async getCommentSummaryByUser(
+    page: number = 1,
+    pageSize: number = 25,
+    filters: { moderation_status?: string; content_type?: string } = {}
+  ): Promise<{ rows: { user_id: string; username: string; email: string; role: string; count: number }[]; total: number; error: PostgrestError | null }> {
+    // Fetch a window of recent comments joined to users for display
+    let query = supabase
+      .from('comments')
+      .select('user_id, users!inner(username, email, role)')
+      .order('created_at', { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1);
+
+    if (filters.moderation_status) query = query.eq('moderation_status', filters.moderation_status);
+    if (filters.content_type) query = query.eq('content_type', filters.content_type);
+
+    const { data, error } = await query;
+    if (error) return { rows: [], total: 0, error };
+
+    const map = new Map<string, { user_id: string; username: string; email: string; role: string; count: number }>();
+    data?.forEach((row: any) => {
+      const key = row.user_id;
+      const existing = map.get(key);
+      if (existing) existing.count += 1;
+      else map.set(key, { user_id: row.user_id, username: row.users?.username || '—', email: row.users?.email || '', role: row.users?.role || '', count: 1 });
+    });
+
+    // Also aggregate reviews by author_id
+    let rQuery = supabase
+      .from('reviews')
+      .select('author_id, users!inner(username, email, role)')
+      .order('created_at', { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1);
+
+    const { data: rData, error: rErr } = await rQuery;
+    if (rErr) return { rows: [], total: 0, error: rErr };
+    rData?.forEach((row: any) => {
+      const key = row.author_id;
+      const existing = map.get(key);
+      if (existing) existing.count += 1;
+      else map.set(key, { user_id: row.author_id, username: row.users?.username || '—', email: row.users?.email || '', role: row.users?.role || '', count: 1 });
+    });
+
+    // Also aggregate gift replies by sender_id
+    let gQuery = supabase
+      .from('gift_replies')
+      .select('sender_id, users!inner(username, email, role)')
+      .order('created_at', { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1);
+
+    const { data: gData, error: gErr } = await gQuery;
+    if (gErr) return { rows: [], total: 0, error: gErr };
+    gData?.forEach((row: any) => {
+      const key = row.sender_id;
+      const existing = map.get(key);
+      if (existing) existing.count += 1;
+      else map.set(key, { user_id: row.sender_id, username: row.users?.username || '—', email: row.users?.email || '', role: row.users?.role || '', count: 1 });
+    });
+
+    const rows = Array.from(map.values());
+    return { rows, total: rows.length, error: null };
+  }
+  /**
+   * Get compact list of media grouped by user
+   */
+  static async getMediaSummaryByUser(
+    page: number = 1,
+    pageSize: number = 25,
+    filters: { media_type?: string; moderation_status?: string } = {}
+  ): Promise<{ rows: { user_id: string; username: string; count: number; latest_created_at: string }[]; error: PostgrestError | null; }> {
+    // Build a view-like aggregation using RPC via SQL
+    let base = supabase
+      .from('media_items')
+      .select('user_id, created_at, users!inner(username)')
+      .order('created_at', { ascending: false });
+
+    if (filters.media_type) base = base.eq('media_type', filters.media_type);
+    if (filters.moderation_status) base = base.eq('moderation_status', filters.moderation_status);
+
+    // Fetch a window of recent items then aggregate client-side (keeps query simple without views)
+    const { data, error } = await base.range((page - 1) * pageSize, page * pageSize - 1);
+    if (error) return { rows: [], error };
+
+    const map = new Map<string, { user_id: string; username: string; count: number; latest_created_at: string }>();
+    data?.forEach((row: any) => {
+      const key = row.user_id;
+      const existing = map.get(key);
+      if (existing) {
+        existing.count += 1;
+        if (new Date(row.created_at) > new Date(existing.latest_created_at)) {
+          existing.latest_created_at = row.created_at;
+        }
+      } else {
+        map.set(key, { user_id: row.user_id, username: row.users?.username || '—', count: 1, latest_created_at: row.created_at });
+      }
+    });
+
+    return { rows: Array.from(map.values()), error: null };
+  }
+  /**
    * Get all content reports with pagination and filters
    */
   static async getContentReports(
@@ -154,33 +255,53 @@ export class ContentModerationService {
     comments: Comment[];
     error: PostgrestError | null;
   }> {
-    let query = supabase
+    // Base: comments table
+    let base = supabase
       .from('comments')
       .select('*')
       .order('created_at', { ascending: false });
 
-    // Apply filters
-    if (filters.status) {
-      query = query.eq('status', filters.status);
-    }
-    if (filters.content_type) {
-      query = query.eq('content_type', filters.content_type);
-    }
-    if (filters.user_id) {
-      query = query.eq('user_id', filters.user_id);
-    }
-    if (filters.moderation_status) {
-      query = query.eq('moderation_status', filters.moderation_status);
+    if (filters.status) base = base.eq('status', filters.status);
+    if (filters.content_type) base = base.eq('content_type', filters.content_type);
+    if (filters.user_id) base = base.eq('user_id', filters.user_id);
+    if (filters.moderation_status) base = base.eq('moderation_status', filters.moderation_status);
+
+    base = base.range((page - 1) * pageSize, page * pageSize - 1);
+
+    const { data: commentRows, error: cErr } = await base;
+    if (filters.content_type && filters.content_type !== 'gift') {
+      return { comments: (commentRows as Comment[]) || [], error: cErr };
     }
 
-    // Apply pagination
-    query = query.range((page - 1) * pageSize, page * pageSize - 1);
+    // If viewing gifts, include mapped gift replies
+    let gq = supabase
+      .from('gift_replies')
+      .select('id, gift_id, sender_id, message, created_at, updated_at')
+      .order('created_at', { ascending: false });
+    if (filters.user_id) gq = gq.eq('sender_id', filters.user_id);
+    // pagination: reuse same window
+    gq = gq.range((page - 1) * pageSize, page * pageSize - 1);
 
-    const { data: comments, error } = await query;
+    const { data: giftReplyRows, error: gErr } = await gq;
+
+    const mappedGiftReplies: Comment[] = (giftReplyRows || []).map((gr: any) => ({
+      id: gr.id,
+      user_id: gr.sender_id,
+      content_type: 'gift',
+      content_id: gr.gift_id,
+      comment: gr.message,
+      status: 'active',
+      moderation_status: 'approved',
+      created_at: gr.created_at,
+      updated_at: gr.updated_at,
+      moderated_at: null,
+      moderated_by: null,
+      moderation_reason: null,
+    }));
 
     return {
-      comments: comments as Comment[] || [],
-      error
+      comments: ([...(commentRows as any[] || []), ...mappedGiftReplies]) as Comment[],
+      error: cErr || gErr || null,
     };
   }
 
@@ -225,6 +346,33 @@ export class ContentModerationService {
       p_reason: reason
     });
 
+    return { error };
+  }
+
+  /** Delete a gift reply */
+  static async deleteGiftReply(replyId: string): Promise<{ error: PostgrestError | null }> {
+    const { error } = await supabase.from('gift_replies').delete().eq('id', replyId);
+    return { error };
+  }
+
+  /**
+   * Record newly uploaded images to media_items for admin moderation
+   */
+  static async recordUploadedImages(
+    userId: string,
+    uploads: Array<{ url: string; path: string }>
+  ): Promise<{ error: PostgrestError | null }> {
+    if (!uploads || uploads.length === 0) return { error: null };
+    const rows = uploads.map(u => ({
+      user_id: userId,
+      media_type: 'image',
+      url: u.url,
+      thumbnail_url: null,
+      status: 'active',
+      moderation_status: 'pending'
+    }));
+
+    const { error } = await supabase.from('media_items').insert(rows);
     return { error };
   }
 } 

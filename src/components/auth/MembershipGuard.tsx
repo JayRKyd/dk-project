@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUserProfile } from '../../hooks/useUserProfile';
 import { getUserMembershipTier } from '../../utils/authUtils';
@@ -28,8 +28,7 @@ export const MembershipGuard: React.FC<MembershipGuardProps> = ({
   redirectTo
 }) => {
   const { user } = useAuth();
-  const { profile, loading } = useUserProfile();
-  const navigate = useNavigate();
+  const { loading } = useUserProfile();
   
   // Show loading while checking user profile
   if (loading) {
@@ -53,12 +52,9 @@ export const MembershipGuard: React.FC<MembershipGuardProps> = ({
   
   if (!hasAccess) {
     console.log(`🚫 ACCESS DENIED: User tier "${userTier}" cannot access "${requiredTier}" feature`);
-    
     if (redirectTo) {
-      navigate(redirectTo, { replace: true });
-      return null;
+      return <Navigate to={redirectTo} replace />;
     }
-    
     return fallback || <UpgradePrompt requiredTier={requiredTier} currentTier={userTier} />;
   }
   

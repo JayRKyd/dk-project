@@ -1,75 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Gift, X, Coins, Heart, ArrowLeft, AlertCircle, Loader2 } from 'lucide-react';
+import { Coins, Heart, ArrowLeft, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { clientDashboardService } from '../services/clientDashboardService';
 
-interface GiftOption {
-  id: string;
-  name: string;
-  emoji: string;
-  credits: number;
-  description: string;
-}
-
-const giftOptions: GiftOption[] = [
-  {
-    id: 'wink',
-    name: 'Wink',
-    emoji: '😉',
-    credits: 1,
-    description: 'Send a wink to let her know that you like her'
-  },
-  {
-    id: 'kiss',
-    name: 'Kiss',
-    emoji: '💋',
-    credits: 5,
-    description: 'Send her a sweet Kiss'
-  },
-  {
-    id: 'rose',
-    name: 'Rose',
-    emoji: '🌹',
-    credits: 10,
-    description: 'A beautiful rose to show your appreciation'
-  },
-  {
-    id: 'chocolate',
-    name: 'Chocolate',
-    emoji: '🍫',
-    credits: 25,
-    description: 'Sweet treats for your favorite person'
-  },
-  {
-    id: 'gift-box',
-    name: 'Gift Box',
-    emoji: '💝',
-    credits: 50,
-    description: 'A special gift box filled with love'
-  },
-  {
-    id: 'champagne',
-    name: 'Champagne',
-    emoji: '🍾',
-    credits: 100,
-    description: 'Celebrate special moments together'
-  },
-  {
-    id: 'diamond',
-    name: 'Diamond',
-    emoji: '💎',
-    credits: 200,
-    description: 'The ultimate expression of admiration'
-  },
-  {
-    id: 'crown',
-    name: 'Crown',
-    emoji: '👑',
-    credits: 250,
-    description: 'Treat your Queen like royalty'
-  }
-];
+interface GiftOption { id: string; name: string; emoji: string; credits: number; }
 
 interface RecipientGift {
   emoji: string;
@@ -87,6 +22,7 @@ export default function SendGift() {
   const { name } = useParams();
   const { user } = useAuth();
   const [selectedGifts, setSelectedGifts] = useState<string[]>([]);
+  const [giftOptions, setGiftOptions] = useState<GiftOption[]>([]);
   const [message, setMessage] = useState('');
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
@@ -112,6 +48,20 @@ export default function SendGift() {
       loadPageData();
     }
   }, [name, user?.id]);
+
+  useEffect(() => {
+    // Load gift types from DB
+    const fetchGiftTypes = async () => {
+      try {
+        const types = await clientDashboardService.getGiftTypes();
+        setGiftOptions(types);
+      } catch (e) {
+        console.warn('Failed to load gift types; falling back to none');
+        setGiftOptions([]);
+      }
+    };
+    fetchGiftTypes();
+  }, []);
 
   const loadPageData = async () => {
     if (!name || !user?.id) return;
@@ -170,10 +120,7 @@ export default function SendGift() {
       // Prepare gift types for sending
       const giftTypesToSend = selectedGifts.map(giftId => {
         const gift = giftOptions.find(g => g.id === giftId)!;
-        return { 
-          type: gift.name, 
-          credits: gift.credits 
-        };
+        return { type: gift.name, credits: gift.credits };
       });
 
       // Send the gifts
@@ -395,15 +342,7 @@ export default function SendGift() {
                       <Coins className="h-4 w-4" />
                       <span>{gift.credits} DK Credits</span>
                     </div>
-                    <div className={`text-xs mt-2 ${
-                      isSelected 
-                        ? 'text-pink-100' 
-                        : canAffordThisGift 
-                        ? 'text-gray-500'
-                        : 'text-gray-400'
-                    }`}>
-                      {gift.description}
-                    </div>
+                    {/* optional description removed since gift types are dynamic */}
                     {!canAffordThisGift && (
                       <div className="text-xs mt-1 text-red-500 font-medium">
                         Insufficient credits

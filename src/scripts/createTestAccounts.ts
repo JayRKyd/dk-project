@@ -11,6 +11,7 @@ interface TestAccount {
   name: string;
   tier: 'FREE' | 'PRO';
   password: string;
+  role?: 'lady' | 'client' | 'club';
 }
 
 const testAccounts: TestAccount[] = [
@@ -25,6 +26,13 @@ const testAccounts: TestAccount[] = [
     name: 'Test Pro Lady',  
     tier: 'PRO',
     password: 'test123456'
+  },
+  {
+    email: 'test-client@dk-dev.com',
+    name: 'Test Client',
+    tier: 'FREE',
+    password: 'test123456',
+    role: 'client'
   }
 ];
 
@@ -61,7 +69,7 @@ async function createTestAccount(account: TestAccount): Promise<boolean> {
         user_id: authData.user.id,
         name: account.name,
         email: account.email,
-        role: 'lady',
+        role: account.role || 'lady',
         membership_tier: account.tier,
         is_test_account: true,
         created_at: new Date().toISOString(),

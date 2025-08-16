@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { notificationsService } from './notificationsService';
 
 export interface ProfileStats {
   profileViews: number;
@@ -437,18 +438,28 @@ export const getProfileCompletion = async (userId: string) => {
     if (profileError) throw profileError;
 
     // Get photos count
-    const { count: photosCount, error: photosError } = await supabase
-      .from('profile_photos')
-      .select('*', { count: 'exact' })
-      .eq('profile_id', userId);
-
-    if (photosError) throw photosError;
+    // Photo presence: use profiles.image_url for main photo
+    // Optional gallery: count from media_items owned by user
+    let photosCount = 0;
+    try {
+      if (profileData?.image_url) {
+        photosCount += 1;
+      }
+      const { count: galleryCount } = await supabase
+        .from('media_items')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+      photosCount += galleryCount || 0;
+    } catch (photosErr) {
+      // Non-fatal; keep photosCount as best-effort
+      console.warn('Photo count check warning:', photosErr);
+    }
 
     // Get user's services count
     const { count: servicesCount, error: servicesError } = await supabase
       .from('services')
-      .select('*', { count: 'exact' })
-      .eq('user_id', userId);
+      .select('*', { count: 'exact', head: true })
+      .eq('profile_id', userId);
 
     if (servicesError) throw servicesError;
 
@@ -656,6 +667,19 @@ export const recordProfileView = async (
       // Continue even if activity creation fails
     }
 
+    // Create notification for the lady
+    try {
+      await notificationsService.create({
+        profileId,
+        type: 'view',
+        actorUserId: userId,
+        message: 'Your profile was viewed',
+        data: null,
+      });
+    } catch (notifyErr) {
+      console.warn('Failed to create view notification:', notifyErr);
+    }
+
     return true;
   } catch (error) {
     console.error('Error recording profile view:', error);
@@ -732,6 +756,19 @@ export const toggleProfileLove = async (
       if (activityError) {
         console.error('Error creating activity record:', activityError);
         // Continue even if activity creation fails
+      }
+
+      // Create notification for the lady
+      try {
+        await notificationsService.create({
+          profileId,
+          type: 'love',
+          actorUserId: userId,
+          message: 'You received a new love',
+          data: null,
+        });
+      } catch (notifyErr) {
+        console.warn('Failed to create love notification:', notifyErr);
       }
 
       return true;

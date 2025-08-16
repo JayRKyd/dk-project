@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Image as ImageIcon, Video as VideoIcon, Lock, X, Camera, Plus } from 'lucide-react';
+import { fanPostsService } from '../services/fanPostsService';
+import { supabase } from '../lib/supabase';
 
 type Theme = 'Happy' | 'Romantic' | 'No comment' | 'Sexy' | 'Wild' | 'Hardcore';
 
@@ -73,11 +75,22 @@ export default function CreateFanPost() {
     setVideoPreviewUrls(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Creating new fan post:', formData);
-    // Here you would typically make an API call to create the post
-    navigate('/fan-posts/melissa');
+    const isPremium = formData.type === 'premium';
+    try {
+      await fanPostsService.createFanPost({
+        content: formData.content,
+        theme: formData.theme,
+        isPremium,
+        mediaFiles: [...formData.images, ...formData.videos],
+        creditsCost: isPremium ? formData.price : 0,
+      });
+      navigate('/dashboard/lady/fan-posts');
+    } catch (err) {
+      console.error('Failed to create fan post', err);
+      alert('Failed to create fan post.');
+    }
   };
 
   return (

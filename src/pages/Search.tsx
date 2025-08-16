@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { searchProfiles, SearchFilters as ServiceSearchFilters, SearchResult } from '../services/searchService';
 
 interface SearchFilters {
@@ -17,6 +17,7 @@ interface SearchFilters {
 }
 
 export default function Search() {
+  const navigate = useNavigate();
   const [filters, setFilters] = useState<SearchFilters>({
     location: 'Amsterdam',
     radius: '50',
@@ -52,6 +53,11 @@ export default function Search() {
     return {
       location: filters.location,
       category: category,
+      radiusKm: parseInt(filters.radius),
+      requireVerified: filters.type.includes('Verified by DateKelly'),
+      requireFanPosts: filters.type.includes('Fan Posts'),
+      visitTypes: filters.type.filter(t => ['Private visit','Escort'].includes(t)),
+      services: filters.services,
       ageMin: parseInt(filters.age.min),
       ageMax: parseInt(filters.age.max),
       heightMin: parseInt(filters.height.min),
@@ -74,11 +80,11 @@ export default function Search() {
 
     try {
       const serviceFilters = convertFiltersToServiceFilters(filters);
-      console.log('Searching with filters:', serviceFilters);
-      
       const results = await searchProfiles(serviceFilters);
       setSearchResults(results);
-      console.log('Search results:', results);
+      // Also push to a dedicated results page with query params
+      const params = new URLSearchParams({ ...serviceFilters, location: serviceFilters.location || '' } as any).toString();
+      navigate(`/search/results?${params}`, { replace: false });
     } catch (error) {
       console.error('Search error:', error);
       setSearchResults([]);

@@ -63,7 +63,9 @@ export const uploadClubDocument = async (
     const timestamp = Date.now();
     const fileExtension = file.name.split('.').pop();
     const fileName = `${documentType}_${timestamp}.${fileExtension}`;
-    const filePath = `clubs/${clubId}/${fileName}`;
+    // Storage RLS policy requires the first folder to be the auth user's id
+    // So the object key must start with `${auth.uid()}/...`
+    const filePath = `${clubId}/${fileName}`;
 
     // Upload to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -87,7 +89,9 @@ export const uploadClubDocument = async (
     const { data: documentData, error: dbError } = await supabase
       .from('club_verification_documents')
       .insert({
+        // Satisfy both legacy and current schemas
         club_id: clubId,
+        user_id: clubId,
         document_type: documentType,
         file_url: urlData.publicUrl,
         file_name: file.name,
@@ -174,29 +178,7 @@ export const submitClubVerification = async (
   clubId: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    // Check if all required documents are uploaded
-    const { data: documents, error: docsError } = await supabase
-      .from('club_verification_documents')
-      .select('document_type, upload_status')
-      .eq('club_id', clubId)
-      .eq('upload_status', 'success');
-
-    if (docsError) {
-      console.error('Check documents error:', docsError);
-      return { success: false, error: 'Failed to check document status' };
-    }
-
-    const requiredDocs = ['business_license', 'registration_certificate', 'tax_document'];
-    const uploadedDocs = documents?.map(doc => doc.document_type) || [];
-    const missingDocs = requiredDocs.filter(doc => !uploadedDocs.includes(doc));
-
-    if (missingDocs.length > 0) {
-      return { 
-        success: false, 
-        error: `Missing required documents: ${missingDocs.join(', ')}` 
-      };
-    }
-
+    // Simplified: Clubs do not need to upload documents. Only require business info to be complete.
     // Check if business info is complete
     const { data: userData, error: userError } = await supabase
       .from('users')
@@ -260,22 +242,17 @@ export const getClubVerificationStatus = async (
       return { success: false, error: 'Failed to get verification status' };
     }
 
-    // Get documents
-    const { data: documents, error: docsError } = await supabase
+    // Documents are no longer required for clubs
+    const { data: documents } = await supabase
       .from('club_verification_documents')
       .select('*')
       .eq('club_id', clubId)
       .order('created_at', { ascending: false });
 
-    if (docsError) {
-      console.error('Get documents error:', docsError);
-      return { success: false, error: 'Failed to get documents' };
-    }
-
-    const requiredDocuments = ['business_license', 'registration_certificate', 'tax_document'];
-    const uploadedDocTypes = documents?.filter(doc => doc.upload_status === 'success').map(doc => doc.document_type) || [];
-    const missingDocuments = requiredDocuments.filter(doc => !uploadedDocTypes.includes(doc));
-    const completionPercentage = Math.round((uploadedDocTypes.filter(type => requiredDocuments.includes(type)).length / requiredDocuments.length) * 100);
+    // Completion based on business info fields filled
+    const fields = [userData.business_name, userData.business_type, userData.business_phone, userData.business_website];
+    const filled = fields.filter((v: any) => !!(v && String(v).trim())).length;
+    const completionPercentage = Math.round((filled / 4) * 100);
 
     const verificationStatus: ClubVerificationStatus = {
       verification_status: userData.verification_status as any,
@@ -290,8 +267,8 @@ export const getClubVerificationStatus = async (
         business_website: userData.business_website || ''
       },
       completion_percentage: completionPercentage,
-      required_documents: requiredDocuments,
-      missing_documents: missingDocuments
+      required_documents: [],
+      missing_documents: []
     };
 
     return { success: true, data: verificationStatus };
@@ -321,9 +298,18 @@ export const deleteClubDocument = async (
       return { success: false, error: 'Document not found or access denied' };
     }
 
-    // Extract file path from URL
-    const urlParts = document.file_url.split('/');
-    const filePath = urlParts.slice(-2).join('/'); // Get last two parts (clubs/clubId/filename)
+    // Extract file path from URL relative to the bucket
+    // Expected URL format: .../object/public/verification-documents/<path>
+    let filePath: string;
+    const bucketPrefix = '/object/public/verification-documents/';
+    const prefixIndex = document.file_url.indexOf(bucketPrefix);
+    if (prefixIndex !== -1) {
+      filePath = document.file_url.substring(prefixIndex + bucketPrefix.length);
+    } else {
+      // Fallback: use last two segments (e.g., `${userId}/${filename}`)
+      const urlParts = document.file_url.split('/');
+      filePath = urlParts.slice(-2).join('/');
+    }
 
     // Delete from storage
     const { error: storageError } = await supabase.storage
@@ -358,36 +344,8 @@ export const deleteClubDocument = async (
  * Get document types with their display names and requirements
  */
 export const getClubDocumentTypes = () => {
-  return [
-    {
-      type: 'business_license' as const,
-      name: 'Business License',
-      description: 'Official business operating license',
-      required: true,
-      icon: '📄'
-    },
-    {
-      type: 'registration_certificate' as const,
-      name: 'Registration Certificate',
-      description: 'Business registration certificate',
-      required: true,
-      icon: '📋'
-    },
-    {
-      type: 'tax_document' as const,
-      name: 'Tax Document',
-      description: 'Tax registration or VAT certificate',
-      required: true,
-      icon: '📊'
-    },
-    {
-      type: 'additional_document' as const,
-      name: 'Additional Document',
-      description: 'Any additional business verification document',
-      required: false,
-      icon: '📎'
-    }
-  ];
+  // Clubs do not need to upload documents anymore
+  return [] as const;
 };
 
 /**

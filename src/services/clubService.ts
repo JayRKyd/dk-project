@@ -109,6 +109,22 @@ export interface ClubNotification {
 }
 
 export const clubService = {
+  // Get club by club ID
+  async getClubById(clubId: string): Promise<ClubProfile | null> {
+    const { data, error } = await supabase
+      .from('clubs')
+      .select('*')
+      .eq('id', clubId)
+      .single();
+
+    if (error) {
+      if ((error as any).code === 'PGRST116') {
+        return null;
+      }
+      throw error;
+    }
+    return data;
+  },
   // Get club profile by user ID
   async getClubProfile(userId: string): Promise<ClubProfile | null> {
     const { data, error } = await supabase
@@ -144,15 +160,35 @@ export const clubService = {
 
   // Update club profile
   async updateClubProfile(userId: string, updates: Partial<ClubProfile>): Promise<ClubProfile> {
-    const { data, error } = await supabase
+    // Ensure a row exists for this user; create one if not
+    const { data: existing, error: existingError } = await supabase
       .from('clubs')
-      .update(updates)
+      .select('id')
       .eq('user_id', userId)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+
+    if (existing?.id) {
+      const { data, error } = await supabase
+        .from('clubs')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data as ClubProfile;
+    } else {
+      const { data, error } = await supabase
+        .from('clubs')
+        .insert({ user_id: userId, ...updates })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data as ClubProfile;
+    }
   },
 
   // Get club stats

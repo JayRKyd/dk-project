@@ -161,9 +161,11 @@ export const useUserProfile = (): UserProfileHook => {
           // PGRST116 means no rows found, which is fine for new users
           console.warn('Profile data not found, using default profile');
         } else if (profileData) {
+          // Merge profile data but do not overwrite non-null fields with nulls
           combinedProfile = {
             ...combinedProfile,
             ...profileData,
+            image_url: profileData.image_url ?? combinedProfile.image_url,
           };
         }
       } catch (dbError) {
@@ -238,16 +240,28 @@ export const useUserProfile = (): UserProfileHook => {
       // If we're here, either there was no image_url update or it failed
       // Proceed with normal update flow
       
-      // Update public.users if there are relevant fields
-      if (Object.keys(cleanUpdates).length > 0) {
-        const userUpdates = {
-          ...cleanUpdates,
-          updated_at: new Date().toISOString(),
-        };
+      // Update public.users only with fields that actually exist in that table
+      const allowedUserFields = new Set([
+        'image_url',
+        'username',
+        'is_verified',
+        'membership_tier',
+        'credits',
+        'client_number',
+        'role',
+      ]);
+      const filteredUserUpdates: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(cleanUpdates)) {
+        if (allowedUserFields.has(key)) {
+          filteredUserUpdates[key] = value as unknown;
+        }
+      }
+      if (Object.keys(filteredUserUpdates).length > 0) {
+        filteredUserUpdates['updated_at'] = new Date().toISOString();
 
         const { error: userError } = await supabase
           .from('users')
-          .update(userUpdates)
+          .update(filteredUserUpdates)
           .eq('id', user.id);
 
         if (userError) {
@@ -257,26 +271,49 @@ export const useUserProfile = (): UserProfileHook => {
 
       // Update public.profiles with profile-specific fields
       const profileUpdates: any = {};
-      
       // Only include fields that are relevant to profiles
-      if (updates.name) profileUpdates.name = updates.name;
-      if (updates.location) profileUpdates.location = updates.location;
-      if (updates.image_url) profileUpdates.image_url = updates.image_url;
-      if (updates.description) profileUpdates.description = updates.description;
-      if (updates.price) profileUpdates.price = updates.price;
-      
+      if (typeof updates.name !== 'undefined') profileUpdates.name = updates.name;
+      if (typeof updates.location !== 'undefined') profileUpdates.location = updates.location;
+      if (typeof updates.image_url !== 'undefined') profileUpdates.image_url = updates.image_url;
+      if (typeof updates.description !== 'undefined') profileUpdates.description = updates.description;
+      if (typeof updates.price !== 'undefined') profileUpdates.price = updates.price;
+
       if (Object.keys(profileUpdates).length > 0) {
         profileUpdates.updated_at = new Date().toISOString();
-        
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .upsert({
-            user_id: user.id,
-            ...profileUpdates,
-          });
 
-        if (profileError) {
-          console.error('Error updating profile record:', profileError);
+        // Try update by user_id first
+        const { data: updateRes, error: updateProfileError } = await supabase
+          .from('profiles')
+          .update(profileUpdates)
+          .eq('user_id', user.id)
+          .select('id')
+          .maybeSingle();
+
+        if (updateProfileError) {
+          console.error('Error updating profile record:', updateProfileError);
+        }
+
+        // If no row was updated, insert a new one with required fields
+        if (!updateRes) {
+          const safeName = profileUpdates.name ?? user.user_metadata?.name ?? user.user_metadata?.username ?? (user.email ? user.email.split('@')[0] : 'User');
+          const safeLocation = profileUpdates.location ?? 'Location not specified';
+          const insertPayload = {
+            user_id: user.id,
+            name: safeName,
+            location: safeLocation,
+            image_url: profileUpdates.image_url,
+            description: profileUpdates.description,
+            price: profileUpdates.price,
+            updated_at: profileUpdates.updated_at,
+          } as any;
+
+          const { error: insertProfileError } = await supabase
+            .from('profiles')
+            .insert(insertPayload);
+
+          if (insertProfileError) {
+            console.error('Error inserting profile record:', insertProfileError);
+          }
         }
       }
 

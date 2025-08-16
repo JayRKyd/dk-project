@@ -17,6 +17,7 @@ interface ClubDashboardState {
   membershipProgress: MembershipProgress | null;
   viewAnalytics: ViewAnalytics | null;
   revenueData: RevenueData | null;
+  credits?: import('../services/creditService').UserCredits | null;
   creditSummary: CreditSummary | null;
   loading: boolean;
   errors: {
@@ -43,6 +44,7 @@ const initialState: ClubDashboardState = {
   membershipProgress: null,
   viewAnalytics: null,
   revenueData: null,
+  credits: null,
   creditSummary: null,
   loading: true,
   errors: {}

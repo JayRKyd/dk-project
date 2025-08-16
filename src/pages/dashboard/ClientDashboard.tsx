@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-  Users, 
   Heart, 
   Star, 
   MessageCircle, 
@@ -10,14 +9,8 @@ import {
   Camera, 
   DollarSign, 
   Calendar, 
-  Clock,
-  TrendingUp,
-  Eye,
   Bell,
-  ArrowUp,
   Coins,
-  ArrowRight,
-  Shield,
   Loader
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -27,16 +20,16 @@ import {
   ClientActivity, 
   Booking 
 } from '../../services/clientDashboardService';
+import { supabase } from '../../lib/supabase';
 
-interface DashboardState {
-  membershipTier: 'FREE' | 'PRO' | 'PRO-PLUS' | 'ULTRA';
-}
+// Dashboard state type was unused; removed for lint clean
 
 export default function ClientDashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState<ClientStats | null>(null);
   const [recentActivities, setRecentActivities] = useState<ClientActivity[]>([]);
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
+  const [inAppNotices, setInAppNotices] = useState<Array<{ id: string; type: string; title: string; message: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +51,31 @@ export default function ClientDashboard() {
         setStats(statsData);
         setRecentActivities(activitiesData);
         setUpcomingBookings(bookingsData);
+
+        // Load in-app notices (from user_notification_settings derived rules)
+        try {
+          const notices: Array<{ id: string; type: string; title: string; message: string }> = [];
+          const { data: settings } = await supabase
+            .from('user_notification_settings')
+            .select('*')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          if (settings) {
+            if (settings.booking_updates && bookingsData.length > 0) {
+              const b = bookingsData[0];
+              notices.push({ id: 'upcoming', type: 'booking', title: `Upcoming booking ${formatBookingDate(b.date).toLowerCase()}`, message: `With ${b.lady.name} at ${b.time}` });
+            }
+            if (settings.messages) {
+              // Placeholder for real message alerts
+            }
+            if (settings.fan_posts_from_favorites) {
+              // Could surface last fan-posts unlocked or fav posts updates – placeholder
+            }
+          }
+          setInAppNotices(notices);
+        } catch (_) {
+          setInAppNotices([]);
+        }
       } catch (err) {
         console.error('Error loading dashboard data:', err);
         setError('Failed to load dashboard data. Please try again.');
@@ -361,18 +379,14 @@ export default function ClientDashboard() {
               <Bell className="h-5 w-5 text-gray-400" />
             </div>
             <div className="space-y-4">
-              {upcomingBookings.length > 0 && (
+              {inAppNotices.find(n => n.type === 'booking') && (
                 <div className="flex items-center gap-4 p-3 bg-pink-50 rounded-lg">
                   <div className="bg-pink-100 p-2 rounded-lg">
                     <Calendar className="h-5 w-5 text-pink-500" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Upcoming booking {formatBookingDate(upcomingBookings[0].date).toLowerCase()}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      With {upcomingBookings[0].lady.name} at {upcomingBookings[0].time}
-                    </p>
+                    <p className="text-sm font-medium text-gray-900">{inAppNotices.find(n => n.type === 'booking')?.title}</p>
+                    <p className="text-xs text-gray-500">{inAppNotices.find(n => n.type === 'booking')?.message}</p>
                   </div>
                 </div>
               )}
@@ -387,15 +401,17 @@ export default function ClientDashboard() {
                   </div>
                 </div>
               )}
-              <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg">
-                <div className="bg-blue-100 p-2 rounded-lg">
-                  <MessageCircle className="h-5 w-5 text-blue-500" />
+              {recentActivities.length === 0 && (
+                <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg">
+                  <div className="bg-blue-100 p-2 rounded-lg">
+                    <MessageCircle className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Welcome to DateKelly!</p>
+                    <p className="text-xs text-gray-500">Your account is ready to use</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Welcome to DateKelly!</p>
-                  <p className="text-xs text-gray-500">Your account is ready to use</p>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

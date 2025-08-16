@@ -1,19 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, Shield, CheckCircle2, AlertCircle, Info, Loader2, X, Building, Phone, Globe, FileText } from 'lucide-react';
+import { ArrowLeft, Shield, CheckCircle2, AlertCircle, Info, Loader2, Building } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   getClubVerificationStatus, 
   updateClubBusinessInfo, 
-  uploadClubDocument, 
   submitClubVerification,
-  deleteClubDocument,
-  getClubDocumentTypes,
   validateBusinessWebsite,
   validateBusinessPhone,
   type ClubVerificationStatus,
-  type ClubBusinessInfo,
-  type ClubVerificationDocument 
+  type ClubBusinessInfo
 } from '../services/clubVerificationService';
 
 interface FormErrors {
@@ -36,10 +32,10 @@ export default function ClubVerification() {
     business_website: ''
   });
   const [formErrors, setFormErrors] = useState<FormErrors>({});
-  const [uploadingDocs, setUploadingDocs] = useState<Set<string>>(new Set());
+  // Documents no longer required for clubs
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  const documentTypes = getClubDocumentTypes();
+  // Documents no longer required for clubs
 
   // Load verification status on component mount
   useEffect(() => {
@@ -120,49 +116,9 @@ export default function ClubVerification() {
     }
   };
 
-  const handleFileUpload = async (file: File, documentType: ClubVerificationDocument['document_type']) => {
-    if (!user?.id) return;
+  // Upload handlers removed (no longer used)
 
-    setUploadingDocs(prev => new Set(prev).add(documentType));
-    
-    try {
-      const result = await uploadClubDocument(file, documentType, user.id);
-      if (result.success) {
-        await loadVerificationStatus(); // Refresh data
-      } else {
-        alert(`Failed to upload ${documentType}: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('Upload error:', error);
-      alert('An error occurred during upload. Please try again.');
-    } finally {
-      setUploadingDocs(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(documentType);
-        return newSet;
-      });
-    }
-  };
-
-  const handleDeleteDocument = async (documentId: string, documentType: string) => {
-    if (!user?.id) return;
-
-    if (!confirm(`Are you sure you want to delete this ${documentType} document?`)) {
-      return;
-    }
-
-    try {
-      const result = await deleteClubDocument(documentId, user.id);
-      if (result.success) {
-        await loadVerificationStatus(); // Refresh data
-      } else {
-        alert(`Failed to delete document: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('Delete error:', error);
-      alert('An error occurred while deleting. Please try again.');
-    }
-  };
+  // Delete handlers removed (no longer used)
 
   const handleSubmitVerification = async () => {
     if (!user?.id) return;
@@ -203,18 +159,21 @@ export default function ClubVerification() {
   };
 
   const isBusinessInfoComplete = () => {
-    return businessInfo.business_name.trim() && 
-           businessInfo.business_type.trim() && 
-           businessInfo.business_phone.trim() && 
-           businessInfo.business_website.trim();
+    return !!(
+      businessInfo.business_name.trim() &&
+      businessInfo.business_type.trim() &&
+      businessInfo.business_phone.trim() &&
+      businessInfo.business_website.trim()
+    );
   };
 
   const canSubmitVerification = () => {
-    return isBusinessInfoComplete() && 
-           verificationStatus && 
-           verificationStatus.missing_documents.length === 0 &&
-           verificationStatus.verification_status !== 'submitted' &&
-           verificationStatus.verification_status !== 'verified';
+    return (
+      isBusinessInfoComplete() &&
+      verificationStatus &&
+      verificationStatus.verification_status !== 'submitted' &&
+      verificationStatus.verification_status !== 'verified'
+    );
   };
 
   if (loading) {
@@ -433,100 +392,7 @@ export default function ClubVerification() {
             </div>
           </div>
 
-          {/* Document Upload */}
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Required Documents</h2>
-            
-            <div className="space-y-6">
-              {documentTypes.map((docType) => {
-                const existingDoc = verificationStatus?.documents.find(doc => doc.document_type === docType.type);
-                const isUploading = uploadingDocs.has(docType.type);
-                
-                return (
-                  <div key={docType.type} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-start space-x-3">
-                        <span className="text-2xl">{docType.icon}</span>
-                        <div>
-                          <h3 className="font-medium text-gray-900">
-                            {docType.name}
-                            {docType.required && <span className="text-red-500 ml-1">*</span>}
-                          </h3>
-                          <p className="text-sm text-gray-600">{docType.description}</p>
-                        </div>
-                      </div>
-                      
-                      {existingDoc && (
-                        <div className="flex items-center space-x-2">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            existingDoc.verification_status === 'approved' ? 'bg-green-100 text-green-800' :
-                            existingDoc.verification_status === 'rejected' ? 'bg-red-100 text-red-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {existingDoc.verification_status}
-                          </span>
-                          <button
-                            onClick={() => handleDeleteDocument(existingDoc.id, docType.name)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {existingDoc ? (
-                      <div className="bg-gray-50 rounded-lg p-3">
-                        <div className="flex items-center space-x-2">
-                          <FileText className="h-4 w-4 text-gray-500" />
-                          <span className="text-sm text-gray-700">{existingDoc.file_name}</span>
-                        </div>
-                        {existingDoc.rejection_reason && (
-                          <p className="text-sm text-red-600 mt-2">
-                            Rejection reason: {existingDoc.rejection_reason}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                        <input
-                          type="file"
-                          accept=".pdf,.jpg,.jpeg,.png,.webp"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              handleFileUpload(file, docType.type);
-                            }
-                          }}
-                          className="hidden"
-                          id={`file-${docType.type}`}
-                          disabled={isUploading}
-                        />
-                        <label
-                          htmlFor={`file-${docType.type}`}
-                          className={`cursor-pointer flex flex-col items-center space-y-2 ${
-                            isUploading ? 'opacity-50 cursor-not-allowed' : ''
-                          }`}
-                        >
-                          {isUploading ? (
-                            <Loader2 className="h-8 w-8 text-pink-500 animate-spin" />
-                          ) : (
-                            <Upload className="h-8 w-8 text-gray-400" />
-                          )}
-                          <span className="text-sm font-medium text-gray-700">
-                            {isUploading ? 'Uploading...' : 'Click to upload'}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            PDF, JPEG, PNG, WebP (max 10MB)
-                          </span>
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          {/* Documents no longer required for Clubs; remove upload section */}
         </div>
 
         {/* Submit Button */}

@@ -159,7 +159,10 @@ export const uploadImage = async (
     // Generate a unique filename
     const fileExt = file.name.split('.').pop();
     const fileName = `${userId}_${uuidv4()}.${fileExt}`;
-    const filePath = folder ? `${folder}/${fileName}` : fileName;
+    // Always store images inside a user-specific folder to satisfy RLS policies
+    const filePath = folder
+      ? `${userId}/${folder}/${fileName}`
+      : `${userId}/${fileName}`;
     
     // Upload to Supabase with retry for RLS issues
     let uploadData = null;
@@ -170,15 +173,14 @@ export const uploadImage = async (
       .from(bucket)
       .upload(filePath, processedImage, {
         cacheControl: '3600',
-        upsert: true,
         contentType: file.type
       });
       
     uploadData = uploadResult.data;
     uploadError = uploadResult.error;
     
-    // If we get an RLS error, try with a more specific path that might be allowed
-    if (uploadError && (uploadError.message?.includes('security policy') || uploadError.message?.includes('Unauthorized'))) {
+    // If any error occurred, log and attempt a retry (path already user-specific)
+    if (uploadError) {
       console.log('Attempting upload with user-specific path due to RLS policy...');
       
       // Try with a user-specific path which might be allowed by RLS
@@ -188,7 +190,6 @@ export const uploadImage = async (
         .from(bucket)
         .upload(userSpecificPath, processedImage, {
           cacheControl: '3600',
-          upsert: true,
           contentType: file.type
         });
         
@@ -229,7 +230,15 @@ export const uploadMultipleImages = async (
   userId: string
 ): Promise<Array<{ path: string; url: string }>> => {
   const uploadPromises = files.map(file => uploadImage(file, bucket, folder, userId));
-  return Promise.all(uploadPromises);
+  const uploads = await Promise.all(uploadPromises);
+  // Record uploads for admin moderation if they come from supported buckets
+  try {
+    const { ContentModerationService } = await import('./contentModerationService');
+    await ContentModerationService.recordUploadedImages(userId, uploads);
+  } catch (_) {
+    // noop if service import fails
+  }
+  return uploads;
 };
 
 /**

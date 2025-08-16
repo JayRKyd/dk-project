@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { notificationsService } from './notificationsService';
 
 export interface ClientStats {
   totalBookings: number;
@@ -111,6 +112,31 @@ export interface CreditTransaction {
 }
 
 export const clientDashboardService = {
+  /**
+   * Get available gift types from DB
+   */
+  async getGiftTypes(): Promise<Array<{ id: string; name: string; emoji: string; credits: number }>> {
+    const { data, error } = await supabase
+      .from('gift_types')
+      .select('slug, name, credits_cost, icon, is_active, sort_order')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching gift types:', error);
+      return [];
+    }
+
+    return (
+      data?.map((row: any) => ({
+        id: row.slug as string,
+        name: row.name as string,
+        emoji: (row.icon as string) || '🎁',
+        credits: Number(row.credits_cost) || 0,
+      })) || []
+    );
+  },
   /**
    * Get client dashboard statistics
    */
@@ -305,9 +331,9 @@ export const clientDashboardService = {
     return data?.map((review: any) => ({
       id: review.id,
       lady: {
-        id: review.profiles?.[0]?.id || review.profiles?.id || '',
-        name: review.profiles?.[0]?.name || review.profiles?.name || 'Unknown',
-        imageUrl: review.profiles?.[0]?.image_url || review.profiles?.image_url || '',
+        id: review.profiles?.id || '',
+        name: review.profiles?.name || 'Unknown',
+        imageUrl: review.profiles?.image_url || '',
       },
       date: new Date(review.created_at).toLocaleDateString(),
       rating: Number(review.rating),
@@ -325,7 +351,7 @@ export const clientDashboardService = {
    * Submit a new review
    */
   async submitReview(reviewData: {
-    ladyName: string;
+    ladyId: string;
     rating: number;
     positives: string[];
     negatives: string[];
@@ -338,41 +364,15 @@ export const clientDashboardService = {
         throw new Error('You must be logged in to submit a review.');
       }
 
-      // 2. Validate lady exists with better name matching
-      let ladyProfile: { id: string; user_id: string; name: string; image_url?: string } | null = null;
-      
-      const { data: exactMatch, error: profileError } = await supabase
+      // 2. Validate lady exists by ID
+      const { data: ladyProfile, error: profileError } = await supabase
         .from('profiles')
         .select('id, user_id, name, image_url')
-        .or(`name.ilike.%${reviewData.ladyName}%,name.eq.${reviewData.ladyName}`)
+        .eq('id', reviewData.ladyId)
         .single();
 
-      if (!profileError && exactMatch) {
-        ladyProfile = exactMatch;
-      } else {
-        // Try fuzzy matching if exact/partial match fails
-        const { data: fuzzyMatches } = await supabase
-          .from('profiles')
-          .select('id, user_id, name, image_url')
-          .ilike('name', `%${reviewData.ladyName}%`)
-          .limit(5);
-
-        if (!fuzzyMatches || fuzzyMatches.length === 0) {
-          throw new Error(`Lady "${reviewData.ladyName}" not found. Please check the name and try again.`);
-        }
-
-        if (fuzzyMatches.length === 1) {
-          // Use the single match
-          ladyProfile = fuzzyMatches[0];
-        } else {
-          // Multiple matches found
-          const matchNames = fuzzyMatches.map(m => m.name).join(', ');
-          throw new Error(`Multiple ladies found matching "${reviewData.ladyName}": ${matchNames}. Please be more specific.`);
-        }
-      }
-
-      if (!ladyProfile) {
-        throw new Error(`Lady "${reviewData.ladyName}" not found. Please check the name and try again.`);
+      if (profileError || !ladyProfile) {
+        throw new Error('Lady profile not found. Please try again.');
       }
 
       // 3. Check if user has completed a booking with this lady (experienced community rule)
@@ -448,7 +448,20 @@ export const clientDashboardService = {
         // Don't fail the whole operation for activity logging
       }
 
-      // 7. Return formatted review
+      // 7. Create a notification for the lady
+      try {
+        await notificationsService.create({
+          profileId: ladyProfile.id,
+          type: 'review',
+          actorUserId: user.id,
+          message: 'New review received',
+          data: { review_id: review.id, rating: reviewData.rating }
+        });
+      } catch (notifyErr) {
+        console.warn('Failed to create review notification:', notifyErr);
+      }
+
+      // 8. Return formatted review
       return {
         id: review.id,
         lady: {
@@ -468,6 +481,60 @@ export const clientDashboardService = {
       console.error('Error submitting review:', error);
       throw error;
     }
+  },
+
+  /**
+   * Submit a review for a club profile
+   */
+  async submitClubReview(reviewData: {
+    clubId: string;
+    rating: number;
+    positives: string[];
+    negatives: string[];
+    isAnonymous?: boolean;
+  }): Promise<Review> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('You must be logged in to submit a review.');
+
+    const { data: club, error: clubErr } = await supabase
+      .from('clubs')
+      .select('id, name')
+      .eq('id', reviewData.clubId)
+      .single();
+    if (clubErr || !club) throw new Error('Club not found.');
+
+    const { data: existing } = await supabase
+      .from('reviews')
+      .select('id')
+      .eq('author_id', user.id)
+      .eq('profile_id', club.id)
+      .maybeSingle();
+    if (existing) throw new Error('You have already reviewed this club.');
+
+    const { data: inserted, error: insErr } = await supabase
+      .from('reviews')
+      .insert({
+        author_id: user.id,
+        profile_id: club.id,
+        rating: reviewData.rating,
+        positives: reviewData.positives,
+        negatives: reviewData.negatives,
+        status: 'approved'
+      })
+      .select()
+      .single();
+    if (insErr) throw insErr;
+
+    return {
+      id: inserted.id,
+      lady: { id: club.id, name: club.name, imageUrl: '' },
+      date: new Date(inserted.created_at).toLocaleDateString(),
+      rating: inserted.rating,
+      positives: inserted.positives || [],
+      negatives: inserted.negatives || [],
+      likes: inserted.likes || 0,
+      dislikes: inserted.dislikes || 0,
+    } as any;
   },
 
   /**
@@ -516,9 +583,9 @@ export const clientDashboardService = {
       return {
         id: review.id,
         lady: {
-          id: review.profiles?.[0]?.id || review.profiles?.id || '',
-          name: review.profiles?.[0]?.name || review.profiles?.name || 'Unknown',
-          imageUrl: review.profiles?.[0]?.image_url || review.profiles?.image_url || '',
+          id: review.profiles?.[0]?.id || '',
+          name: review.profiles?.[0]?.name || 'Unknown',
+          imageUrl: review.profiles?.[0]?.image_url || '',
         },
         date: new Date(review.created_at).toLocaleDateString(),
         rating: Number(review.rating),
@@ -1095,6 +1162,71 @@ export const clientDashboardService = {
       referenceId: transaction.reference_id,
       createdAt: transaction.created_at,
     })) || [];
+  },
+
+  /**
+   * Complete a credit purchase (pre-Stripe hookup):
+   * - Atomically add credits via RPC (as a 'purchase')
+   * - Record a general transaction row for admin financials
+   */
+  async completeCreditPurchase(
+    userId: string,
+    packages: Array<{ id: string; quantity: number }>,
+    totalCredits: number,
+    totalCost: number
+  ): Promise<{ success: boolean; transactionId?: string }> {
+    try {
+      // 1) Add credits to the user's balance using the existing RPC
+      const { error: rpcError } = await supabase.rpc('process_client_credit_transaction', {
+        user_id_param: userId,
+        amount_param: totalCredits,
+        type_param: 'purchase',
+        description_param: `Credit purchase: €${totalCost.toFixed(2)} for ${totalCredits} credits`,
+        reference_id_param: null
+      });
+      if (rpcError) throw rpcError;
+
+      // 2) Record a general transaction for admin financial dashboard (best-effort)
+      try {
+        const { data: tx, error: txErr } = await supabase
+          .from('transactions')
+          .insert({
+            user_id: userId,
+            transaction_type: 'credit_purchase',
+            amount: totalCost,
+            credits_amount: totalCredits,
+            status: 'completed',
+            payment_provider: 'pending_stripe',
+            metadata: { packages }
+          })
+          .select('*')
+          .single();
+        if (txErr) throw txErr;
+        return { success: true, transactionId: tx?.id };
+      } catch (e) {
+        // If transactions table not available or RLS blocks, still succeed purchase
+        return { success: true };
+      }
+    } catch (error) {
+      console.error('Error completing credit purchase:', error);
+      return { success: false };
+    }
+  },
+
+  /**
+   * Get IDs of fan posts unlocked by this client
+   */
+  async getUnlockedFanPostIds(clientId: string): Promise<string[]> {
+    try {
+      const { data, error } = await supabase
+        .from('fan_post_unlocks')
+        .select('fan_post_id')
+        .eq('client_id', clientId);
+      if (error) return [];
+      return (data || []).map((r: any) => r.fan_post_id);
+    } catch (e) {
+      return [];
+    }
   },
 
   /**

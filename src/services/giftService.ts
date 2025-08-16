@@ -25,9 +25,25 @@ export interface GiftWithReplies {
   replies: GiftReply[];
   date: string;
   time: string;
+  status?: 'pending' | 'collected';
+  collectedAt?: string | null;
 }
 
 export const giftService = {
+  /**
+   * Collect a gift (lady action) with membership gating handled in RPC
+   */
+  async collectGift(giftId: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('You must be logged in.');
+
+    const { error } = await supabase.rpc('collect_gift', { p_gift_id: giftId });
+    if (error) {
+      // surface friendly message from RPC errors
+      const message = (error as any)?.message || 'Failed to collect gift';
+      throw new Error(message);
+    }
+  },
   /**
    * Send a reply to a gift
    */
@@ -227,10 +243,8 @@ export const giftService = {
           credits_cost,
           message,
           created_at,
-          profiles!gifts_recipient_id_fkey (
-            name,
-            image_url
-          ),
+          status,
+          collected_at,
           users!gifts_sender_id_fkey (
             username
           )
@@ -243,6 +257,19 @@ export const giftService = {
         throw new Error('Failed to load gifts.');
       }
 
+      // Fetch recipient profiles in batch (needed for name/image)
+      const recipientIds = Array.from(new Set((gifts || []).map(g => g.recipient_id).filter(Boolean)));
+      let recipientProfileMap = new Map<string, { name: string; image_url?: string }>();
+      if (recipientIds.length > 0) {
+        const { data: profileRows } = await supabase
+          .from('profiles')
+          .select('user_id, name, image_url')
+          .in('user_id', recipientIds as string[]);
+        (profileRows || []).forEach((p: any) => {
+          recipientProfileMap.set(p.user_id, { name: p.name, image_url: p.image_url });
+        });
+      }
+
       // Get replies for each gift
       const giftsWithReplies = await Promise.all(
         (gifts || []).map(async (gift) => {
@@ -251,8 +278,8 @@ export const giftService = {
           return {
             id: gift.id,
             recipient: {
-              name: (gift.profiles as any)?.name || 'Unknown',
-              imageUrl: (gift.profiles as any)?.image_url || ''
+              name: recipientProfileMap.get(gift.recipient_id)?.name || 'Unknown',
+              imageUrl: recipientProfileMap.get(gift.recipient_id)?.image_url || ''
             },
             type: {
               name: gift.gift_type,
@@ -265,7 +292,9 @@ export const giftService = {
             time: new Date(gift.created_at).toLocaleTimeString([], { 
               hour: '2-digit', 
               minute: '2-digit' 
-            })
+            }),
+            status: (gift.status as 'pending' | 'collected') || 'pending',
+            collectedAt: gift.collected_at || null
           };
         })
       );

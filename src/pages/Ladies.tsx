@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, Loader } from 'lucide-react';
 import ProfileCard from '../components/ProfileCard';
 import SearchBar from '../components/SearchBar';
 import { Profile, PromoCard } from '../types';
+import { supabase } from '../lib/supabase';
 
 const getAdvertisementRoute = (profile: Profile) => {
   return profile.membershipTier === 'PRO'
@@ -39,104 +40,6 @@ const photoPromo: PromoCard = {
   isPromo: true,
   hideText: true
 };
-const sampleProfiles: Profile[] = [
-  {
-    id: '1',
-    name: 'Sophia',
-    location: 'Amsterdam',
-    imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
-    rating: 9.5,
-    loves: 245,
-    isVerified: true,
-    isClub: false,
-    description: 'Hi, I\'m Sophia! I offer a genuine GFE experience. Available for incall and outcall.',
-    membershipTier: 'PRO'
-  },
-  {
-    id: '5',
-    name: 'Emma',
-    location: 'Eindhoven',
-    imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80',
-    rating: 8.5,
-    loves: 156,
-    isVerified: false,
-    isClub: false,
-    description: 'Sweet and charming girl next door. Available for incall and outcall.',
-    membershipTier: 'FREE'
-  },
-  {
-    id: '6',
-    name: 'Sarah',
-    location: 'Groningen',
-    imageUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=800&q=80',
-    rating: 8.8,
-    loves: 203,
-    isVerified: false,
-    isClub: false,
-    description: 'Fun-loving and adventurous. Let\'s create unforgettable moments together.',
-    membershipTier: 'FREE'
-  },
-  {
-    id: '8',
-    name: 'Isabella',
-    location: 'Amsterdam',
-    imageUrl: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=800&q=80',
-    rating: 9.7,
-    loves: 312,
-    isVerified: true,
-    isClub: false,
-    description: 'Elite companion offering unforgettable experiences. Available for dinner dates and travel.',
-    membershipTier: 'PRO'
-  },
-  {
-    id: '2',
-    name: 'Jenny',
-    location: 'Rotterdam',
-    imageUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80',
-    rating: 9.8,
-    loves: 532,
-    isVerified: true,
-    isClub: true,
-    description: 'Premium escort agency with the most beautiful ladies in Rotterdam.',
-    membershipTier: 'PRO'
-  },
-  {
-    id: '7',
-    name: 'Victoria',
-    location: 'Maastricht',
-    imageUrl: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=800&q=80',
-    rating: 8.2,
-    loves: 167,
-    isVerified: false,
-    isClub: false,
-    description: 'Passionate and sensual. Available for private visits only.',
-    membershipTier: 'FREE'
-  },
-  {
-    id: '3',
-    name: 'Alexandra',
-    location: 'The Hague',
-    imageUrl: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80',
-    rating: 9.2,
-    loves: 178,
-    isVerified: false,
-    isClub: false,
-    description: 'Hi, I\'m Alexandra! I offer a genuine GFE experience. Available for incall and outcall.',
-    membershipTier: 'FREE'
-  },
-  {
-    id: '4',
-    name: 'Melissa',
-    location: 'Utrecht',
-    imageUrl: 'https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=800&q=80',
-    rating: 9.9,
-    loves: 423,
-    isVerified: true,
-    isClub: true,
-    description: 'Exclusive club with VIP rooms and luxury amenities. Private parking available.',
-    membershipTier: 'PRO'
-  }
-];
 
 // Netherlands city proximity map for location fallback
 const nearbyCities: Record<string, string[]> = {
@@ -181,72 +84,215 @@ const getNearestDutchCity = (lat: number, lng: number): string => {
 export default function Ladies() {
   const [clientLocation, setClientLocation] = useState<string | null>(null);
   const [locationLoading, setLocationLoading] = useState(true);
-  const [filteredProfiles, setFilteredProfiles] = useState<Profile[]>(sampleProfiles);
+  const [filteredProfiles, setFilteredProfiles] = useState<Profile[]>([]);
   const [showingNearby, setShowingNearby] = useState(false);
+  const [verifiedLadies, setVerifiedLadies] = useState<Profile[]>([]);
+  const [loadingLadies, setLoadingLadies] = useState(true);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [serviceMatchedProfileIds, setServiceMatchedProfileIds] = useState<Set<string>>(new Set());
 
+  // Fetch verified ladies from Supabase on mount
   useEffect(() => {
-    // Request user's location
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          const nearestCity = getNearestDutchCity(latitude, longitude);
-          setClientLocation(nearestCity);
-          setLocationLoading(false);
-        },
-        () => {
-          // Permission denied or error - show all ladies
-          setLocationLoading(false);
-        }
-      );
-    } else {
-      // Geolocation not supported - show all ladies
-      setLocationLoading(false);
+    async function fetchVerifiedLadies() {
+      setLoadingLadies(true);
+      // Fetch users with role 'lady' and verification_status 'verified'
+      const { data: users, error: userError } = await supabase
+        .from('users')
+        .select('id, verification_status, membership_tier, is_blocked')
+        .eq('role', 'lady')
+        .eq('verification_status', 'verified')
+        .eq('is_blocked', false);
+      if (userError || !users || users.length === 0) {
+        setVerifiedLadies([]);
+        setLoadingLadies(false);
+        return;
+      }
+      // Fetch profiles for these users
+      const userIds = users.map(u => u.id);
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('user_id', userIds);
+      if (profileError || !profiles) {
+        setVerifiedLadies([]);
+        setLoadingLadies(false);
+        return;
+      }
+      // Map to Profile type for ProfileCard
+      const mapped: Profile[] = profiles
+        .filter((p: any) => !p.hide_listing_card)
+        .map((p) => {
+        // Find the user for membership tier
+        const user = users.find(u => u.id === p.user_id);
+        return {
+          id: p.id,
+          name: p.name,
+          location: p.location || 'Location not specified',
+          imageUrl: p.image_url || 'https://via.placeholder.com/400x400?text=No+Image',
+          rating: p.rating || 0,
+          loves: p.loves || 0,
+          isVerified: true,
+          isClub: p.is_club || false,
+          description: p.description || '',
+          membershipTier: (user?.membership_tier === 'PRO' || user?.membership_tier === 'PRO-PLUS' || user?.membership_tier === 'ULTRA') ? 'PRO' : 'FREE',
+        };
+      });
+      setVerifiedLadies(mapped);
+      setLoadingLadies(false);
     }
+    fetchVerifiedLadies();
   }, []);
 
+  // Detect viewer location (browser geolocation → nearest known city)
   useEffect(() => {
+    const detect = async () => {
+      try {
+        if (!navigator.geolocation) {
+          setLocationLoading(false);
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude } = pos.coords;
+            const city = getNearestDutchCity(latitude, longitude);
+            setClientLocation(city);
+            setLocationLoading(false);
+          },
+          () => setLocationLoading(false),
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      } catch {
+        setLocationLoading(false);
+      }
+    };
+    detect();
+  }, []);
+
+  // When a popular tag is selected, fetch matching services and record profile_ids
+  useEffect(() => {
+    const fetchServiceMatches = async () => {
+      if (!selectedTag) {
+        setServiceMatchedProfileIds(new Set());
+        return;
+      }
+
+      // Map tag to likely service keywords
+      const tag = selectedTag.toLowerCase();
+      const keywordMap: Record<string, string[]> = {
+        'escort': ['escort'],
+        'safe sex': ['safe', 'protected', 'condom'],
+        'blowjob with condom': ['blowjob', 'bj', 'condom'],
+        'anal sex': ['anal'],
+        's&m': ['s&m', 'bdsm', 'fetish', 'dominance'],
+        'ladyboys': ['ladyboy', 'trans', 'transgender'],
+        'positive reviews': [],
+        'new ladies': []
+      };
+
+      const keywords = keywordMap[tag] || [tag];
+      // Build OR filter for Supabase: name.ilike.%kw1%,name.ilike.%kw2%
+      const orFilter = keywords
+        .filter(Boolean)
+        .map(kw => `name.ilike.%${kw}%`)
+        .join(',');
+
+      try {
+        if (orFilter.length === 0) {
+          setServiceMatchedProfileIds(new Set());
+          return;
+        }
+        const { data, error } = await supabase
+          .from('services')
+          .select('profile_id, name')
+          .or(orFilter)
+          .limit(500);
+        if (error) {
+          console.warn('Service match fetch error:', error);
+          setServiceMatchedProfileIds(new Set());
+          return;
+        }
+        const ids = new Set<string>((data || []).map((r: any) => r.profile_id));
+        setServiceMatchedProfileIds(ids);
+      } catch (e) {
+        console.warn('Service match error:', e);
+        setServiceMatchedProfileIds(new Set());
+      }
+    };
+    fetchServiceMatches();
+  }, [selectedTag]);
+
+  // Build ordered list: PRO in-city → FREE in-city → PRO nearby → FREE nearby
+  useEffect(() => {
+    const source = verifiedLadies;
     if (!clientLocation) {
-      // No location detected - show all ladies
-      setFilteredProfiles(sampleProfiles);
+      // No location detected - just apply tier sort globally
+      const tierPriority = { PRO: 1, FREE: 2 } as any;
+      let base = [...source].sort((a, b) => tierPriority[a.membershipTier] - tierPriority[b.membershipTier]);
+      // Apply tag filter if any
+      if (selectedTag) {
+        const tagLc = selectedTag.toLowerCase();
+        base = base.filter(p =>
+          p.description?.toLowerCase().includes(tagLc) || serviceMatchedProfileIds.has(p.id)
+        );
+      }
+      setFilteredProfiles(base);
+      setShowingNearby(false);
       return;
     }
 
-    // Filter ladies by client's city first
-    let cityLadies = sampleProfiles.filter(lady => 
-      lady.location.toLowerCase().includes(clientLocation.toLowerCase())
-    );
+    let inCity = source.filter(p => p.location?.toLowerCase().includes(clientLocation.toLowerCase()));
+    const nearbyList = (nearbyCities[clientLocation] || []);
+    let inNearby = source.filter(p => nearbyList.some(city => p.location?.toLowerCase().includes(city.toLowerCase())));
 
-    // If not enough results in the city, expand to nearby cities
-    if (cityLadies.length < 3) {
-      const nearby = nearbyCities[clientLocation] || [];
-      const nearbyLadies = sampleProfiles.filter(lady => 
-        nearby.some(city => lady.location.toLowerCase().includes(city.toLowerCase()))
-      );
-      
-      if (nearbyLadies.length > 0) {
-        cityLadies = [...cityLadies, ...nearbyLadies];
-        setShowingNearby(true);
-      }
+    // Apply tag filter if selected
+    if (selectedTag) {
+      const tagLc = selectedTag.toLowerCase();
+      const matches = (p: Profile) => p.description?.toLowerCase().includes(tagLc) || serviceMatchedProfileIds.has(p.id);
+      inCity = inCity.filter(matches);
+      inNearby = inNearby.filter(matches);
     }
 
-    // If still no results, show all ladies
-    if (cityLadies.length === 0) {
-      cityLadies = sampleProfiles;
-    }
+    const pro = (list: Profile[]) => list.filter(p => p.membershipTier === 'PRO');
+    const free = (list: Profile[]) => list.filter(p => p.membershipTier !== 'PRO');
 
-    setFilteredProfiles(cityLadies);
-  }, [clientLocation]);
+    const ordered: Profile[] = [
+      ...pro(inCity),
+      ...free(inCity),
+      ...pro(inNearby),
+      ...free(inNearby),
+    ];
+
+    setFilteredProfiles(ordered.length > 0 ? ordered : []);
+    setShowingNearby(inNearby.length > 0);
+  }, [clientLocation, verifiedLadies, selectedTag, serviceMatchedProfileIds]);
 
   // Sort profiles by tier (PRO first, then FREE)
   const sortedProfiles = filteredProfiles.sort((a, b) => {
     const tierPriority = { 'PRO': 1, 'FREE': 2 };
     return tierPriority[a.membershipTier] - tierPriority[b.membershipTier];
   });
+  // Use the sorted list directly (avoid duplicating with verifiedLadies)
+  const allProfiles = sortedProfiles;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <SearchBar />
+      <SearchBar
+        valueCity={clientLocation || ''}
+        onCityChange={(city) => setClientLocation(city || null)}
+        onTagSelect={(tag) => setSelectedTag(tag)}
+      />
+
+      {selectedTag && (
+        <div className="bg-pink-50 border border-pink-200 rounded-lg p-3 -mt-4 mb-6 text-pink-700 text-sm">
+          Filtering by: <strong>{selectedTag}</strong>
+          <button
+            className="ml-3 text-pink-600 underline"
+            onClick={() => setSelectedTag(null)}
+          >
+            Clear
+          </button>
+        </div>
+      )}
       
       {/* Location Status Banner */}
       {locationLoading ? (
@@ -282,8 +328,15 @@ export default function Ladies() {
         <Link to="/photo-studio" className="block">
           <ProfileCard {...photoPromo} />
         </Link>
-
-        {sortedProfiles.map((profile) => {
+        {/* Show loading spinner while fetching real ladies */}
+        {loadingLadies && (
+          <div className="col-span-full flex justify-center items-center py-8">
+            <Loader className="h-8 w-8 animate-spin text-pink-500" />
+            <span className="ml-2 text-pink-500">Loading verified ladies...</span>
+          </div>
+        )}
+        {/* Show real and mock profiles */}
+        {allProfiles.map((profile) => {
           const ProfileCardWrapper = () => (
             <Link to={getAdvertisementRoute(profile)} className="block">
               <ProfileCard key={profile.id} {...profile} />

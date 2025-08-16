@@ -7,19 +7,17 @@ import { LoadingSpinner } from '../ui/LoadingSpinner';
 
 interface ClubVerificationGuardProps {
   children: React.ReactNode;
-  allowSkipped?: boolean;
   redirectPath?: string;
 }
 
 export default function ClubVerificationGuard({ 
   children, 
-  allowSkipped = false, 
   redirectPath = '/club-verification' 
 }: ClubVerificationGuardProps) {
   const { user } = useAuth();
   const [verificationStatus, setVerificationStatus] = useState<ClubVerificationStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showSkipPrompt, setShowSkipPrompt] = useState(false);
+  // Limited access bypass removed per product decision
 
   useEffect(() => {
     if (user?.id) {
@@ -63,10 +61,7 @@ export default function ClubVerificationGuard({
     return <>{children}</>;
   }
 
-  // Allow skipped access if enabled and user chose to skip
-  if (allowSkipped && showSkipPrompt) {
-    return <>{children}</>;
-  }
+  // No limited access bypass; unverified clubs are directed to verification
 
   const getStatusInfo = () => {
     switch (verificationStatus?.verification_status) {
@@ -76,7 +71,7 @@ export default function ClubVerificationGuard({
           title: 'Verification Under Review',
           description: 'Your club verification is being reviewed by our team. This typically takes 24-48 hours.',
           color: 'blue',
-          canProceed: allowSkipped
+          canProceed: false
         };
       case 'rejected':
         return {
@@ -196,15 +191,7 @@ export default function ClubVerificationGuard({
             <ArrowRight className="h-4 w-4" />
           </Link>
 
-          {/* Skip Option (if allowed) */}
-          {allowSkipped && verificationStatus?.verification_status !== 'rejected' && (
-            <button
-              onClick={() => setShowSkipPrompt(true)}
-              className="w-full text-gray-600 py-2 px-4 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-            >
-              Continue with Limited Access
-            </button>
-          )}
+          {/* Limited access option removed */}
         </div>
 
         {/* Additional Info */}

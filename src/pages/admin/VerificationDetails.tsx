@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { getDocuments, VerificationDocument } from '../../services/documentService';
 import { ImageViewer } from '../../components/ui/ImageViewer';
 import { AdminLayout } from '../../components/admin/AdminLayout';
-import { Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Clock, ArrowLeft } from 'lucide-react';
 import { getUserProfile, UserProfile } from '../../services/userVerificationService';
 
 const formatDocumentType = (type: string): string => {
@@ -21,6 +21,7 @@ const formatDocumentType = (type: string): string => {
 
 export default function VerificationDetails() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [documents, setDocuments] = useState<VerificationDocument[]>([]);
@@ -104,6 +105,20 @@ export default function VerificationDetails() {
   return (
     <AdminLayout>
       <div className="p-6">
+        {/* Back Button */}
+        <div className="mb-4">
+          <button
+            onClick={() => {
+              if (window.history.length > 1) navigate(-1);
+              else navigate('/admin/verifications');
+            }}
+            className="inline-flex items-center text-pink-500 hover:text-pink-600"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </button>
+        </div>
+
         {/* User Profile Section */}
         {userProfile && (
           <div className="mb-8 bg-white rounded-lg shadow-sm p-6">

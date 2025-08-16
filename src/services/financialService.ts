@@ -292,4 +292,44 @@ export class FinancialService {
       error
     };
   }
+
+  // Earnings summary (credits-based), via RPC
+  static async getEarningsSummary(userId: string): Promise<{
+    credits_from_gifts: number; credits_from_fanposts: number; credits_payouts: number; credits_available: number; last_payout_at: string | null; error: PostgrestError | null;
+  }> {
+    const { data, error } = await supabase.rpc('get_earnings_summary', { p_user_id: userId });
+    return {
+      credits_from_gifts: data?.[0]?.credits_from_gifts || 0,
+      credits_from_fanposts: data?.[0]?.credits_from_fanposts || 0,
+      credits_payouts: data?.[0]?.credits_payouts || 0,
+      credits_available: data?.[0]?.credits_available || 0,
+      last_payout_at: data?.[0]?.last_payout_at || null,
+      error: error || null,
+    };
+  }
+
+  // Request payout (credits), returns payout id
+  static async requestPayout(userId: string, amountCredits: number, method: string, details: Record<string, any> = {}): Promise<{ id?: string; error: PostgrestError | null }> {
+    const { data, error } = await supabase.rpc('request_payout', {
+      p_user_id: userId,
+      p_amount_credits: amountCredits,
+      p_method: method,
+      p_details: details,
+    });
+    return { id: data as string | undefined, error: error || null };
+  }
+
+  // Admin actions
+  static async approvePayout(payoutId: string): Promise<{ error: PostgrestError | null }> {
+    const { error } = await supabase.rpc('admin_approve_payout', { p_payout_id: payoutId });
+    return { error };
+  }
+  static async markPayoutCompleted(payoutId: string, paymentId?: string): Promise<{ error: PostgrestError | null }> {
+    const { error } = await supabase.rpc('admin_mark_payout_completed', { p_payout_id: payoutId, p_payment_id: paymentId || null });
+    return { error };
+  }
+  static async markPayoutFailed(payoutId: string, reason: string): Promise<{ error: PostgrestError | null }> {
+    const { error } = await supabase.rpc('admin_mark_payout_failed', { p_payout_id: payoutId, p_reason: reason });
+    return { error };
+  }
 } 

@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Crown, Star, Shield, Check, Sparkles, ArrowLeft, Clock, Calendar, ArrowUp, CreditCard, Wallet, ShieldCheck, Coins } from 'lucide-react';
+import { useUserProfile } from '../hooks/useUserProfile';
+import { getAdvertisementStatus, bumpAdvertisement, AdvertisementStatus } from '../services/advertisementService';
+import { useAuth } from '../contexts/AuthContext';
+import { clientDashboardService } from '../services/clientDashboardService';
 
 interface BumpPackage {
   id: string;
@@ -44,6 +48,47 @@ const bumpPackages: BumpPackage[] = [
 export default function BumpAdvertisement() {
   const [selectedPackage, setSelectedPackage] = useState<BumpPackage | null>(null);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const { profile } = useUserProfile();
+  const [status, setStatus] = useState<AdvertisementStatus | undefined>();
+  const [remainingBumps, setRemainingBumps] = useState<number>(0);
+  const [lastBumpText, setLastBumpText] = useState<string>('Never');
+  const [availableCredits, setAvailableCredits] = useState<number>(0); // keep 0 until credit system is wired
+  const { user } = useAuth();
+  const [processing, setProcessing] = useState(false);
+  const [message, setMessage] = useState<string>('');
+
+  const formatRelativeTime = (iso?: string | null): string => {
+    if (!iso) return 'Never';
+    const now = Date.now();
+    const ts = new Date(iso).getTime();
+    if (isNaN(ts)) return 'Never';
+    const diffMs = Math.max(0, now - ts);
+    const minutes = Math.floor(diffMs / (60 * 1000));
+    const hours = Math.floor(diffMs / (60 * 60 * 1000));
+    const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+    if (days > 0) return `${days} day${days !== 1 ? 's' : ''} ago`;
+    if (hours > 0) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+    if (minutes > 0) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    return 'Just now';
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      if (!profile?.id) return;
+      // Load credits from credit system
+      if (user?.id) {
+        const credits = await clientDashboardService.getUserCredits(user.id);
+        setAvailableCredits(credits);
+      } else {
+        setAvailableCredits(0);
+      }
+      const s = await getAdvertisementStatus(profile.id);
+      setStatus(s);
+      setRemainingBumps(s?.remaining_free_bumps ?? 0);
+      setLastBumpText(formatRelativeTime(s?.last_bumped_at));
+    };
+    load();
+  }, [profile?.id]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -67,20 +112,50 @@ export default function BumpAdvertisement() {
             <div className="flex items-center gap-4 mt-4">
               <div className="bg-pink-50 px-4 py-2 rounded-lg">
                 <span className="text-sm text-gray-600">Remaining bumps:</span>
-                <span className="ml-2 font-bold text-pink-500">5</span>
+                <span className="ml-2 font-bold text-pink-500">{remainingBumps}</span>
               </div>
               <div className="bg-pink-50 px-4 py-2 rounded-lg">
                 <span className="text-sm text-gray-600">Last bump:</span>
-                <span className="ml-2 font-medium text-gray-900">2 days ago</span>
+                <span className="ml-2 font-medium text-gray-900">{lastBumpText}</span>
               </div>
             </div>
           </div>
           <button
-            onClick={() => {
-              // Handle bump action
-              console.log('Bumping advertisement');
+            onClick={async () => {
+              if (!profile?.id) return;
+              setProcessing(true);
+              setMessage('');
+              try {
+                // Prefer free bump if available, else attempt credit bump using 10 DK
+                const useCredit = (status?.remaining_free_bumps || 0) <= 0;
+                const creditsNeeded = selectedPackage?.credits || 10;
+                if (useCredit) {
+                  if (availableCredits < creditsNeeded) {
+                    setMessage('Not enough credits. Please top up first.');
+                    setProcessing(false);
+                    return;
+                  }
+                }
+                const result = await bumpAdvertisement(profile.id, useCredit ? 'credit' : 'free', useCredit ? creditsNeeded : 0);
+                setMessage(result.message);
+                // Refresh status
+                const s = await getAdvertisementStatus(profile.id);
+                setStatus(s);
+                setRemainingBumps(s?.remaining_free_bumps ?? 0);
+                setLastBumpText(formatRelativeTime(s?.last_bumped_at));
+                if (useCredit && result.success && user?.id) {
+                  // Deduct credits already handled inside RPC; reload balance
+                  const credits = await clientDashboardService.getUserCredits(user.id);
+                  setAvailableCredits(credits);
+                }
+              } catch (e: any) {
+                setMessage(e?.message || 'Failed to bump');
+              } finally {
+                setProcessing(false);
+              }
             }}
             className="bg-pink-500 text-white px-6 py-3 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
+            disabled={processing}
           >
             <ArrowUp className="h-5 w-5" />
             <span>Bump your Advertisement Now</span>
@@ -246,11 +321,14 @@ export default function BumpAdvertisement() {
             <div className="bg-pink-50 rounded-lg p-4 mb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-600">Available Credits</span>
-                <span className="text-2xl font-bold text-pink-500">170</span>
+                <span className="text-2xl font-bold text-pink-500">{availableCredits}</span>
               </div>
               <div className="text-sm text-gray-500">
                 Use credits to unlock fan posts and send gifts
               </div>
+              {message && (
+                <div className="mt-3 text-sm text-gray-700">{message}</div>
+              )}
             </div>
           </div>
 

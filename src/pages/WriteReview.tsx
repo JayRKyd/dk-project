@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Plus, Minus, Star, ArrowLeft, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Minus, ArrowLeft, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { clientDashboardService } from '../services/clientDashboardService';
+import { profileService } from '../services/profileService';
 
 export default function WriteReview() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { ladyName } = useParams<{ ladyName: string }>();
+  const params = useParams<{ ladyId?: string; id?: string }>();
+  const targetId = params.ladyId || params.id || undefined;
+  const isClub = !!params.id && !params.ladyId; // /write-review/:id from club page
+  
+  const [targetName, setTargetName] = useState<string | null>(null);
+  const [loadingLady, setLoadingLady] = useState(true);
   
   const [formData, setFormData] = useState({
     rating: 0,
@@ -20,16 +26,40 @@ export default function WriteReview() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  useEffect(() => {
+    const fetchTarget = async () => {
+      if (!targetId) {
+        setError('Profile not specified.');
+        setLoadingLady(false);
+        return;
+      }
+      
+      try {
+        if (isClub) {
+          const { clubService } = await import('../services/clubService');
+          const club = await clubService.getClubById(targetId);
+          if (club) setTargetName(club.name); else setError('Club not found.');
+        } else {
+          const profile = await profileService.getProfileById(targetId);
+          if (profile) setTargetName(profile.name); else setError('Lady profile not found.');
+        }
+      } catch (err) {
+        console.error('Error fetching lady profile:', err);
+        setError('Failed to load profile.');
+      } finally {
+        setLoadingLady(false);
+      }
+    };
+
+    fetchTarget();
+  }, [targetId, isClub]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!user?.id) {
-      setError('You must be logged in to submit a review.');
-      return;
-    }
-    
-    if (!ladyName) {
-      setError('Lady name is required.');
+    if (!user || !targetId) {
+      setError('You must be logged in and viewing a valid profile to submit a review.');
+      setSubmitting(false);
       return;
     }
     
@@ -49,13 +79,25 @@ export default function WriteReview() {
     setError(null);
     
     try {
-      await clientDashboardService.submitReview({
-        ladyName: decodeURIComponent(ladyName),
-        rating: formData.rating,
-        positives: validPositives,
-        negatives: formData.negatives.filter(n => n.trim()),
-        isAnonymous: formData.anonymous
-      });
+      if (!targetId) throw new Error('Profile not found.');
+
+      if (isClub) {
+        await clientDashboardService.submitClubReview({
+          clubId: targetId,
+          rating: formData.rating,
+          positives: validPositives,
+          negatives: formData.negatives.filter(n => n.trim()),
+          isAnonymous: formData.anonymous
+        });
+      } else {
+        await clientDashboardService.submitReview({
+          ladyId: targetId,
+          rating: formData.rating,
+          positives: validPositives,
+          negatives: formData.negatives.filter(n => n.trim()),
+          isAnonymous: formData.anonymous
+        });
+      }
       
       setSuccess(true);
       
@@ -97,6 +139,19 @@ export default function WriteReview() {
     }));
   };
 
+  if (loadingLady) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-8">
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading lady profile...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (success) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-8">
@@ -127,9 +182,9 @@ export default function WriteReview() {
       
       <div className="bg-white rounded-xl shadow-sm p-6 md:p-8">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Write a Review</h1>
-        {ladyName && (
+        {targetName && (
           <p className="text-gray-600 mb-6">
-            Share your experience with <span className="font-medium">{decodeURIComponent(ladyName)}</span>
+            Share your experience with <span className="font-medium">{targetName}</span>
           </p>
         )}
         

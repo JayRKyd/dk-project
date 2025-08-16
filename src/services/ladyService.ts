@@ -44,7 +44,7 @@ export const ladyService = {
         return [];
       }
 
-      // Get reviews for this profile with author information
+      // Get reviews for this profile with author information (from users)
       const { data: reviews, error: reviewsError } = await supabase
         .from('reviews')
         .select(`
@@ -55,8 +55,8 @@ export const ladyService = {
           likes,
           dislikes,
           created_at,
-          profiles!reviews_author_id_fkey (
-            name
+          users!reviews_author_id_fkey (
+            username
           ),
           review_replies (
             id,
@@ -73,12 +73,12 @@ export const ladyService = {
       }
 
       return reviews?.map(review => {
-        const authorProfile = Array.isArray(review.profiles) ? review.profiles[0] : review.profiles;
+        const authorUser = Array.isArray(review.users) ? review.users[0] : review.users;
         return {
           id: review.id,
           author: {
-            name: authorProfile?.name || 'Anonymous',
-            isAnonymous: !authorProfile?.name
+            name: authorUser?.username || 'Anonymous',
+            isAnonymous: !authorUser?.username
           },
           rating: Number(review.rating),
           positives: review.positives || [],

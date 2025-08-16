@@ -4,6 +4,11 @@ export interface SearchFilters {
   query?: string;
   location?: string;
   category?: 'ladies' | 'clubs' | 'all';
+  radiusKm?: number;
+  requireVerified?: boolean;
+  requireFanPosts?: boolean;
+  visitTypes?: string[]; // e.g., ['Private visit','Escort']
+  services?: string[];
   ageMin?: number;
   ageMax?: number;
   heightMin?: number;
@@ -34,6 +39,8 @@ export interface SearchResult {
   loves: number;
   is_club: boolean;
   created_at: string;
+  user_id?: string;
+  membership_tier?: string;
   // Profile details
   age?: number;
   sex?: string;
@@ -45,6 +52,9 @@ export interface SearchResult {
   languages?: string[];
   ethnicity?: string;
   body_type?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_km?: number;
 }
 
 export const searchProfiles = async (filters: SearchFilters): Promise<SearchResult[]> => {
@@ -55,6 +65,7 @@ export const searchProfiles = async (filters: SearchFilters): Promise<SearchResu
       .from('profiles')
       .select(`
         *,
+        users:users!profiles_user_id_fkey ( id, verification_status, membership_tier, role, is_blocked ),
         profile_details (
           age,
           sex,
@@ -68,6 +79,9 @@ export const searchProfiles = async (filters: SearchFilters): Promise<SearchResu
           body_type
         )
       `);
+
+    // Exclude blocked accounts globally
+    query = query.eq('users.is_blocked', false);
 
     // Apply category filter
     if (filters.category && filters.category !== 'all') {
@@ -141,6 +155,7 @@ export const searchProfiles = async (filters: SearchFilters): Promise<SearchResu
     // Transform the data to match SearchResult interface
     const results: SearchResult[] = data?.map(profile => ({
       id: profile.id,
+      user_id: profile.user_id,
       name: profile.name,
       location: profile.location,
       description: profile.description,
@@ -150,6 +165,9 @@ export const searchProfiles = async (filters: SearchFilters): Promise<SearchResu
       loves: profile.loves || 0,
       is_club: profile.is_club || false,
       created_at: profile.created_at,
+      membership_tier: profile.users?.membership_tier,
+      latitude: profile.latitude || null,
+      longitude: profile.longitude || null,
       // Profile details
       age: profile.profile_details?.age,
       sex: profile.profile_details?.sex,
@@ -165,6 +183,51 @@ export const searchProfiles = async (filters: SearchFilters): Promise<SearchResu
 
     // Apply additional filters that can't be done at database level
     let filteredResults = results;
+
+    // Verified filter (users.verification_status = 'verified')
+    if (filters.requireVerified) {
+      filteredResults = filteredResults.filter(r => (data || []).find(p => p.id === r.id)?.users?.verification_status === 'verified');
+    }
+
+    // Fan posts filter (require at least one active fan post)
+    if (filters.requireFanPosts) {
+      const userIds = Array.from(new Set(filteredResults.map(r => r.user_id).filter(Boolean))) as string[];
+      if (userIds.length > 0) {
+        const { data: fanIds } = await supabase
+          .from('fan_posts')
+          .select('lady_id')
+          .in('lady_id', userIds)
+          .eq('is_active', true);
+        const setIds = new Set((fanIds || []).map((f: any) => f.lady_id));
+        filteredResults = filteredResults.filter(r => r.user_id && setIds.has(r.user_id));
+      } else {
+        filteredResults = [];
+      }
+    }
+
+    // Services / visit type filter via services.name ilike any keyword
+    const serviceKeywords: string[] = [];
+    if (filters.visitTypes && filters.visitTypes.length) {
+      serviceKeywords.push(...filters.visitTypes.map(v => v.toLowerCase()));
+    }
+    if (filters.services && filters.services.length) {
+      serviceKeywords.push(...filters.services.map(s => s.toLowerCase()));
+    }
+    if (serviceKeywords.length) {
+      const profileIds = filteredResults.map(r => r.id);
+      if (profileIds.length > 0) {
+        const orExpr = serviceKeywords.map(kw => `name.ilike.%${kw}%`).join(',');
+        const { data: svc } = await supabase
+          .from('services')
+          .select('profile_id, name')
+          .in('profile_id', profileIds)
+          .or(orExpr);
+        const svcSet = new Set((svc || []).map((s: any) => s.profile_id));
+        filteredResults = filteredResults.filter(r => svcSet.has(r.id));
+      } else {
+        filteredResults = [];
+      }
+    }
 
     // Age filter
     if (filters.ageMin !== undefined) {
@@ -244,6 +307,36 @@ export const searchProfiles = async (filters: SearchFilters): Promise<SearchResu
       filteredResults = filteredResults.filter(result => 
         result.body_type === filters.bodyType
       );
+    }
+
+    // Radius filter (distance km) based on simple city center fallback
+    if (filters.radiusKm && filters.location) {
+      const center = await (async () => {
+        // lightweight city-to-coords mapping
+        const cityMap: Record<string, { lat: number; lon: number }> = {
+          London: { lat: 51.5074, lon: -0.1278 },
+          Amsterdam: { lat: 52.3676, lon: 4.9041 },
+          Rotterdam: { lat: 51.9244, lon: 4.4777 },
+          'The Hague': { lat: 52.0705, lon: 4.3007 },
+          Utrecht: { lat: 52.0907, lon: 5.1214 },
+          Eindhoven: { lat: 51.4416, lon: 5.4697 },
+          Groningen: { lat: 53.2194, lon: 6.5665 },
+          Maastricht: { lat: 50.8514, lon: 5.6909 },
+        };
+        const key = String(filters.location);
+        return cityMap[key] || null;
+      })();
+      if (center) {
+        const calcDist = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+          const R = 6371; const dLat = (lat2 - lat1) * Math.PI/180; const dLon = (lon2 - lon1) * Math.PI/180;
+          const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); return R*c;
+        };
+        filteredResults = filteredResults.map(r => {
+          const d = (r.latitude && r.longitude) ? calcDist(center.lat, center.lon, r.latitude, r.longitude) : undefined;
+          return { ...r, distance_km: d } as SearchResult;
+        }).filter(r => r.distance_km === undefined || r.distance_km <= filters.radiusKm!);
+      }
     }
 
     return filteredResults;

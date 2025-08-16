@@ -3,115 +3,75 @@ import { Link } from 'react-router-dom';
 import ProfileCard from '../components/ProfileCard';
 import SearchBar from '../components/SearchBar';
 import { Profile } from '../types';
+import { supabase } from '../lib/supabase';
+import { getActiveTiersForClubs } from '../services/clubMembershipService';
 
-const sampleClubs: Profile[] = [
-  {
-    id: '1',
-    name: 'Pink Angels Club',
-    location: 'Amsterdam',
-    imageUrl: 'https://images.unsplash.com/photo-1566737236500-c8ac43014a67?auto=format&fit=crop&w=800&q=80',
-    rating: 9.8,
-    loves: 532,
-    isVerified: true,
-    isClub: true,
-    description: 'Premium escort club with VIP rooms and luxury amenities. Private parking available.',
-    membershipTier: 'ULTRA'
-  },
-  {
-    id: '2',
-    name: 'Diamond Lounge',
-    location: 'Rotterdam',
-    imageUrl: 'https://images.unsplash.com/photo-1517263904808-5dc91e3e7044?auto=format&fit=crop&w=800&q=80',
-    rating: 9.7,
-    loves: 423,
-    isVerified: true,
-    isClub: true,
-    description: 'Exclusive club with VIP rooms and luxury amenities. Private parking available.',
-    membershipTier: 'PRO-PLUS'
-  },
-  {
-    id: '3',
-    name: 'Royal Escorts',
-    location: 'The Hague',
-    imageUrl: 'https://images.unsplash.com/photo-1461988091159-192b6df7054f?auto=format&fit=crop&w=800&q=80',
-    rating: 9.5,
-    loves: 312,
-    isVerified: true,
-    isClub: true,
-    description: 'Elite escort agency offering unforgettable experiences. Available for dinner dates and travel.',
-    membershipTier: 'PRO'
-  },
-  {
-    id: '4',
-    name: 'VIP Club Paradise',
-    location: 'Utrecht',
-    imageUrl: 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=800&q=80',
-    rating: 9.2,
-    loves: 245,
-    isVerified: true,
-    isClub: true,
-    description: 'Luxury club with private rooms and professional staff. Discreet location.',
-    membershipTier: 'PRO'
-  },
-  {
-    id: '5',
-    name: 'Elite Escorts Agency',
-    location: 'Eindhoven',
-    imageUrl: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=800&q=80',
-    rating: 8.8,
-    loves: 156,
-    isVerified: false,
-    isClub: true,
-    description: 'Professional escort agency with experienced staff. 24/7 service available.',
-    membershipTier: 'FREE'
-  },
-  {
-    id: '6',
-    name: 'Luxury Club Sapphire',
-    location: 'Groningen',
-    imageUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=800&q=80',
-    rating: 9.1,
-    loves: 203,
-    isVerified: true,
-    isClub: true,
-    description: 'High-end club with exclusive VIP areas. Professional and discreet service.',
-    membershipTier: 'PRO-PLUS'
-  }
-];
-
-const getAdvertisementRoute = (profile: Profile) => {
-  return profile.membershipTier === 'PRO' || profile.membershipTier === 'PRO-PLUS' || profile.membershipTier === 'ULTRA'
-    ? `/clubs/pro/${profile.id}`
-    : `/clubs/${profile.id}`;
-};
+function getAdvertisementRoute(profile: Profile) {
+	return `/clubs/${profile.id}`;
+}
 
 export default function Clubs() {
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <SearchBar />
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-8">
-        {sampleClubs
-          .sort((a, b) => {
-            // Define tier priority
-            const tierPriority = {
-              'ULTRA': 0,
-              'PRO-PLUS': 1,
-              'PRO': 2,
-              'FREE': 3
-            };
-            
-            // Sort by tier priority
-            return tierPriority[a.membershipTier] - tierPriority[b.membershipTier];
-          })
-          .map((profile) => {
-            const ProfileCardWrapper = () => (
-              <Link to={getAdvertisementRoute(profile)} className="block">
-                <ProfileCard key={profile.id} {...profile} />
-              </Link>
-            );
-            return <ProfileCardWrapper key={profile.id} />;
-          })}
-      </div>
-    </div>
-  );
+	const [clubs, setClubs] = React.useState<Profile[]>([]);
+	const [cityFilter, setCityFilter] = React.useState<string>('');
+	const [query, setQuery] = React.useState<string>('');
+
+	React.useEffect(() => {
+		(async () => {
+			const { data, error } = await supabase
+				.from('clubs')
+				.select('id, name, city, description, cover_photo_url');
+			if (error) return;
+
+			const ids = (data || []).map((c: any) => c.id);
+			let profiles: any[] = [];
+			if (ids.length > 0) {
+				const { data: prof } = await supabase
+					.from('profiles')
+					.select('id, image_url, loves, rating')
+					.in('id', ids);
+				profiles = prof || [];
+			}
+			const map = new Map(profiles.map(p => [p.id, p]));
+
+			const tiers = await getActiveTiersForClubs(ids);
+			const rows: Profile[] = (data || []).map((c: any) => {
+				const p = map.get(c.id) || {};
+				return {
+					id: c.id,
+					name: c.name || 'Club',
+					location: c.city || '',
+					imageUrl: c.cover_photo_url || p.image_url || '',
+					rating: Number(p.rating || 0),
+					loves: Number(p.loves || 0),
+					isVerified: true,
+					isClub: true,
+					description: c.description || '',
+					membershipTier: (tiers[c.id] || 'FREE') as any
+				};
+			});
+			setClubs(rows);
+		})();
+	}, []);
+
+	const tierPriority: Record<string, number> = { 'ULTRA': 0, 'PRO-PLUS': 1, 'PRO': 2, 'FREE': 3 };
+	const filtered = clubs
+		.filter(c => (cityFilter ? c.location === cityFilter : true))
+		.filter(c => (query ? (c.name || '').toLowerCase().includes(query.toLowerCase()) || (c.description || '').toLowerCase().includes(query.toLowerCase()) : true))
+		.sort((a, b) => (tierPriority[a.membershipTier] ?? 3) - (tierPriority[b.membershipTier] ?? 3));
+
+	return (
+		<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+			<SearchBar onCityChange={(city) => setCityFilter(city || '')} onQueryChange={(q: string) => setQuery(q)} />
+			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-8">
+				{filtered.map((profile) => (
+					<Link to={getAdvertisementRoute(profile)} className="block" key={profile.id}>
+						<ProfileCard {...profile} />
+					</Link>
+				))}
+				{filtered.length === 0 && (
+					<div className="col-span-full text-center text-gray-500 py-16">No clubs found.</div>
+				)}
+			</div>
+		</div>
+	);
 }

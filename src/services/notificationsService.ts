@@ -1,5 +1,72 @@
 import { supabase } from '../lib/supabase';
 
+export type NotificationType = 'view' | 'love' | 'gift' | 'review' | 'booking' | 'system' | 'message';
+
+export interface NotificationItem {
+  id: string;
+  profile_id: string;
+  actor_user_id: string | null;
+  type: NotificationType;
+  message: string | null;
+  data: any | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export const notificationsService = {
+  async list(profileId: string, limit: number = 10): Promise<NotificationItem[]> {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('profile_id', profileId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Error fetching notifications:', error);
+      return [];
+    }
+    return (data as NotificationItem[]) || [];
+  },
+
+  async markRead(notificationId: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', notificationId);
+    if (error) {
+      console.error('Error marking notification as read:', error);
+      return false;
+    }
+    return true;
+  },
+
+  async create(params: {
+    profileId: string;
+    type: NotificationType;
+    message?: string;
+    actorUserId?: string;
+    data?: any;
+  }): Promise<boolean> {
+    const { error } = await supabase
+      .from('notifications')
+      .insert({
+        profile_id: params.profileId,
+        type: params.type,
+        message: params.message ?? null,
+        actor_user_id: params.actorUserId ?? null,
+        data: params.data ?? null,
+      });
+    if (error) {
+      console.error('Error creating notification:', error);
+      return false;
+    }
+    return true;
+  },
+};
+
+import { supabase } from '../lib/supabase';
+
 // Database response types
 interface DbUser {
   username: string;

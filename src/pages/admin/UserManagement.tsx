@@ -1,242 +1,161 @@
-import React, { useState, useEffect } from 'react';
-import { AdminModerationService, ModerationLog } from '../../services/adminModerationService';
+import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
+import { AdminLayout } from '../../components/admin/AdminLayout';
+import { AdminGuard } from '../../components/admin/AdminGuard';
+import { adminUserService, type UserWithProfile } from '../../services/adminUserService';
+import { Search, Shield, UserX, Unlock, Ban, Mail, Calendar, UserCircle2 } from 'lucide-react';
 
-interface User {
-  id: string;
-  email: string;
-  username: string;
-  role: string;
-  is_locked: boolean;
-  locked_at: string | null;
-  locked_reason: string | null;
-  lock_expires_at: string | null;
-}
+const PAGE_SIZE = 25;
 
 const UserManagement: React.FC = () => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [moderationLogs, setModerationLogs] = useState<ModerationLog[]>([]);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [lockReason, setLockReason] = useState('');
-  const [lockDuration, setLockDuration] = useState('permanent');
-  const [customDays, setCustomDays] = useState(1);
+  const [users, setUsers] = useState<UserWithProfile[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [search, setSearch] = useState<string>('');
+  const [page, setPage] = useState<number>(1);
+  const [total, setTotal] = useState<number>(0);
 
-  // Load locked users
+  // Load users (paged + search)
   useEffect(() => {
-    const loadLockedUsers = async () => {
+    const loadUsers = async () => {
       setLoading(true);
-      const { users, error } = await AdminModerationService.getLockedUsers(page);
-      if (!error && users) {
-        setUsers(users);
+      try {
+        const { rows, total } = await adminUserService.getUsers({ page, pageSize: PAGE_SIZE, search });
+        setUsers(rows);
+        setTotal(total);
+      } finally {
+        setLoading(false);
       }
+    };
+    loadUsers();
+  }, [page, search]);
+
+  const paged = users; // server-paged
+
+  const handleBlockToggle = async (user: UserWithProfile) => {
+    setLoading(true);
+    try {
+      if (user.is_blocked) await adminUserService.unblockUser(user.id);
+      else await adminUserService.blockUser(user.id);
+      const { rows, total } = await adminUserService.getUsers({ page, pageSize: PAGE_SIZE, search });
+      setUsers(rows);
+      setTotal(total);
+    } finally {
       setLoading(false);
-    };
-
-    loadLockedUsers();
-  }, [page]);
-
-  // Load moderation logs for selected user
-  useEffect(() => {
-    const loadModerationLogs = async () => {
-      if (selectedUser) {
-        const { logs } = await AdminModerationService.getUserModerationLogs(selectedUser.id);
-        setModerationLogs(logs);
-      }
-    };
-
-    loadModerationLogs();
-  }, [selectedUser]);
-
-  const handleLockUser = async (user: User) => {
-    if (!lockReason.trim()) {
-      alert('Please provide a reason for locking the account');
-      return;
-    }
-
-    let expiresAt: Date | undefined;
-    if (lockDuration === 'custom') {
-      expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + customDays);
-    }
-
-    const { error } = await AdminModerationService.lockUser({
-      userId: user.id,
-      reason: lockReason,
-      expiresAt: lockDuration === 'permanent' ? undefined : expiresAt
-    });
-
-    if (!error) {
-      alert('User account locked successfully');
-      // Refresh the user list
-      const { users: updatedUsers } = await AdminModerationService.getLockedUsers(page);
-      setUsers(updatedUsers || []);
-    } else {
-      alert('Error locking user account: ' + error.message);
-    }
-  };
-
-  const handleUnlockUser = async (user: User) => {
-    const { error } = await AdminModerationService.unlockUser(user.id);
-    
-    if (!error) {
-      alert('User account unlocked successfully');
-      // Refresh the user list
-      const { users: updatedUsers } = await AdminModerationService.getLockedUsers(page);
-      setUsers(updatedUsers || []);
-    } else {
-      alert('Error unlocking user account: ' + error.message);
     }
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">User Management</h1>
+    <AdminGuard>
+      <AdminLayout>
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold">User Management</h1>
+          </div>
 
-      {/* User List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div>
-          <h2 className="text-2xl font-semibold mb-4">Locked Users</h2>
-          {loading ? (
-            <p>Loading...</p>
-          ) : (
-            <div className="space-y-4">
-              {users.map(user => (
-                <div 
-                  key={user.id} 
-                  className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
-                  onClick={() => setSelectedUser(user)}
-                >
-                  <h3 className="font-semibold">{user.username}</h3>
-                  <p className="text-sm text-gray-600">{user.email}</p>
-                  <p className="text-sm text-gray-600">
-                    Locked: {user.locked_at ? format(new Date(user.locked_at), 'PPp') : 'No'}
-                  </p>
-                  {user.lock_expires_at && (
-                    <p className="text-sm text-gray-600">
-                      Expires: {format(new Date(user.lock_expires_at), 'PPp')}
-                    </p>
-                  )}
-                  <button
-                    className="mt-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleUnlockUser(user);
-                    }}
-                  >
-                    Unlock Account
-                  </button>
-                </div>
-              ))}
+          {/* Toolbar */}
+          <div className="bg-white rounded-xl shadow-sm p-4 flex items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                placeholder="Search by username, email, role..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+              />
             </div>
-          )}
+          </div>
+
+          {/* Users Table */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <table className="min-w-full">
+              <thead>
+                <tr className="bg-gray-50 text-left text-sm text-gray-600">
+                  <th className="py-3 px-4">User</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Tier</th>
+                  <th className="py-3 px-4">DLT/Client #</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Joined</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr><td className="py-6 px-4" colSpan={7}>Loading...</td></tr>
+                )}
+                {!loading && paged.length === 0 && (
+                  <tr><td className="py-6 px-4" colSpan={7}>No users found</td></tr>
+                )}
+                {!loading && paged.map(user => (
+                  <tr key={user.id} className="border-t">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        {user.profile?.image_url ? (
+                          <img src={user.profile.image_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+                        ) : (
+                          <UserCircle2 className="h-8 w-8 text-gray-400" />
+                        )}
+                        <div>
+                          <div className="font-medium">{user.username || '—'}</div>
+                          <div className="text-xs text-gray-500 flex items-center gap-1"><Mail className="h-3 w-3" /> {user.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 capitalize">{user.role}</td>
+                    <td className="py-3 px-4">{user.membership_tier || 'FREE'}</td>
+                    <td className="py-3 px-4">{user.client_number || '—'}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        {user.is_verified ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700"><Shield className="h-3 w-3" /> Verified</span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">Pending</span>
+                        )}
+                        {user.is_blocked && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700"><Ban className="h-3 w-3" /> Suspended</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-600 flex items-center gap-1"><Calendar className="h-4 w-4" /> {format(new Date(user.created_at), 'PP')}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleBlockToggle(user)}
+                          className={`p-2 rounded-lg border transition-colors ${user.is_blocked ? 'text-green-600 hover:bg-green-50 border-green-200' : 'text-red-600 hover:bg-red-50 border-red-200'}`}
+                          title={user.is_blocked ? 'Unsuspend' : 'Suspend'}
+                        >
+                          {user.is_blocked ? <Unlock className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           {/* Pagination */}
-          <div className="mt-4 flex justify-between">
+          <div className="flex items-center justify-between">
             <button
-              className="bg-gray-200 px-4 py-2 rounded disabled:opacity-50"
+              className="px-4 py-2 bg-gray-100 rounded-lg disabled:opacity-50"
               disabled={page === 1}
               onClick={() => setPage(p => p - 1)}
             >
               Previous
             </button>
+            <div className="text-sm text-gray-600">Page {page} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}</div>
             <button
-              className="bg-gray-200 px-4 py-2 rounded disabled:opacity-50"
-              disabled={users.length < 20}
+              className="px-4 py-2 bg-gray-100 rounded-lg disabled:opacity-50"
+              disabled={page >= Math.ceil(total / PAGE_SIZE)}
               onClick={() => setPage(p => p + 1)}
             >
               Next
             </button>
           </div>
         </div>
-
-        {/* User Details and Lock Form */}
-        <div>
-          {selectedUser ? (
-            <div className="border rounded-lg p-6">
-              <h2 className="text-2xl font-semibold mb-4">
-                {selectedUser.username}'s Details
-              </h2>
-              
-              {/* Lock Account Form */}
-              <div className="mb-6">
-                <h3 className="text-xl font-semibold mb-2">Lock Account</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Reason for Lock
-                    </label>
-                    <textarea
-                      className="w-full border rounded p-2"
-                      value={lockReason}
-                      onChange={(e) => setLockReason(e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Lock Duration
-                    </label>
-                    <select
-                      className="w-full border rounded p-2"
-                      value={lockDuration}
-                      onChange={(e) => setLockDuration(e.target.value)}
-                    >
-                      <option value="permanent">Permanent</option>
-                      <option value="custom">Custom Duration</option>
-                    </select>
-                  </div>
-
-                  {lockDuration === 'custom' && (
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Number of Days
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        className="w-full border rounded p-2"
-                        value={customDays}
-                        onChange={(e) => setCustomDays(parseInt(e.target.value))}
-                      />
-                    </div>
-                  )}
-
-                  <button
-                    className="w-full bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-                    onClick={() => handleLockUser(selectedUser)}
-                  >
-                    Lock Account
-                  </button>
-                </div>
-              </div>
-
-              {/* Moderation History */}
-              <div>
-                <h3 className="text-xl font-semibold mb-2">Moderation History</h3>
-                <div className="space-y-2">
-                  {moderationLogs.map(log => (
-                    <div key={log.id} className="border rounded p-3">
-                      <p className="font-medium">{log.action_type}</p>
-                      <p className="text-sm text-gray-600">{log.reason}</p>
-                      <p className="text-sm text-gray-500">
-                        {format(new Date(log.created_at), 'PPp')}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="border rounded-lg p-6 text-center text-gray-500">
-              Select a user to view details and moderation options
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+      </AdminLayout>
+    </AdminGuard>
   );
 };
 
