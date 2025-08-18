@@ -147,11 +147,11 @@ export const fanPostsService = {
         .select(`
           id,
           content,
-          theme,
-          is_premium,
           credits_cost,
           likes_count,
+          likes,
           comments_count,
+          comments,
           created_at,
           author_id
         `)
@@ -206,16 +206,15 @@ export const fanPostsService = {
             authorImage: (authorProfile as any).image_url || '',
             date: this.formatRelativeDate(post.created_at),
             content: post.content,
-            theme: post.theme,
             contentAmount: {
               photos: images.length,
               videos: videos.length
             },
             imageUrl: images[0],
             additionalImages: images.slice(1),
-            likes: post.likes_count,
-            comments: post.comments_count,
-            isPremium: post.is_premium,
+            likes: (post as any).likes_count ?? (post as any).likes ?? 0,
+            comments: (post as any).comments_count ?? (post as any).comments ?? 0,
+            isPremium: Boolean((post as any).is_premium),
             isLiked: !!like,
             unlockPrice: Number((post as any).credits_cost) || 0
           };
@@ -234,22 +233,52 @@ export const fanPostsService = {
    */
   async getFanPostsByAuthor(authorId: string): Promise<FanPost[]> {
     try {
-      const { data: posts, error } = await supabase
-        .from('fan_posts')
-        .select(`
+      // Try author_id first; if column doesn't exist, fall back to lady_id
+      let posts: any[] | null = null;
+      let error: any = null;
+      const authorSelect = `
           id,
           content,
-          theme,
-          is_premium,
           credits_cost,
           likes_count,
+          likes,
           comments_count,
+          comments,
           created_at,
           author_id
-        `)
+        `;
+      const ladySelect = `
+          id,
+          content,
+          credits_cost,
+          likes_count,
+          likes,
+          comments_count,
+          comments,
+          created_at,
+          lady_id
+        `;
+      {
+        const { data, error: err } = await supabase
+        .from('fan_posts')
+        .select(authorSelect)
         .eq('author_id', authorId)
         .eq('status', 'published')
         .order('created_at', { ascending: false });
+        posts = data as any[] | null;
+        error = err;
+      }
+
+      if (error && error.code === '42703') {
+        const { data, error: err2 } = await supabase
+          .from('fan_posts')
+          .select(ladySelect)
+          .eq('lady_id', authorId)
+          .eq('status', 'published')
+          .order('created_at', { ascending: false });
+        posts = data as any[] | null;
+        error = err2;
+      }
 
       if (error) {
         console.error('Error fetching author fan posts:', error);
@@ -285,16 +314,15 @@ export const fanPostsService = {
             authorImage: (profileRow as any)?.image_url || '',
             date: this.formatRelativeDate(post.created_at),
             content: post.content,
-            theme: post.theme,
             contentAmount: {
               photos: images.length,
               videos: videos.length
             },
             imageUrl: images[0],
             additionalImages: images.slice(1),
-            likes: post.likes_count,
-            comments: post.comments_count,
-            isPremium: post.is_premium,
+            likes: (post as any).likes_count ?? (post as any).likes ?? 0,
+            comments: (post as any).comments_count ?? (post as any).comments ?? 0,
+            isPremium: Boolean((post as any).is_premium),
             unlockPrice: Number((post as any).credits_cost) || 0
           };
         })
