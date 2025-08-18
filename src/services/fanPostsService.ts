@@ -148,14 +148,12 @@ export const fanPostsService = {
           id,
           content,
           credits_cost,
-          likes_count,
           likes,
-          comments_count,
           comments,
           created_at,
-          author_id
+          author_id,
+          lady_id
         `)
-        .eq('status', 'published')
         .order('created_at', { ascending: false });
 
       if (postsError) {
@@ -164,7 +162,7 @@ export const fanPostsService = {
       }
 
       // Fetch author profiles separately (no FK defined)
-      const authorIds = [...new Set((posts || []).map((p: any) => p.author_id))];
+      const authorIds = [...new Set((posts || []).map((p: any) => p.author_id || p.lady_id))];
       const { data: profileRows, error: profileErr } = await supabase
         .from('profiles')
         .select('user_id, name, image_url')
@@ -212,8 +210,8 @@ export const fanPostsService = {
             },
             imageUrl: images[0],
             additionalImages: images.slice(1),
-            likes: (post as any).likes_count ?? (post as any).likes ?? 0,
-            comments: (post as any).comments_count ?? (post as any).comments ?? 0,
+            likes: (post as any).likes ?? 0,
+            comments: (post as any).comments ?? 0,
             isPremium: Boolean((post as any).is_premium),
             isLiked: !!like,
             unlockPrice: Number((post as any).credits_cost) || 0
@@ -240,9 +238,7 @@ export const fanPostsService = {
           id,
           content,
           credits_cost,
-          likes_count,
           likes,
-          comments_count,
           comments,
           created_at,
           author_id
@@ -251,9 +247,7 @@ export const fanPostsService = {
           id,
           content,
           credits_cost,
-          likes_count,
           likes,
-          comments_count,
           comments,
           created_at,
           lady_id
@@ -263,7 +257,6 @@ export const fanPostsService = {
         .from('fan_posts')
         .select(authorSelect)
         .eq('author_id', authorId)
-        .eq('status', 'published')
         .order('created_at', { ascending: false });
         posts = data as any[] | null;
         error = err;
@@ -274,7 +267,6 @@ export const fanPostsService = {
           .from('fan_posts')
           .select(ladySelect)
           .eq('lady_id', authorId)
-          .eq('status', 'published')
           .order('created_at', { ascending: false });
         posts = data as any[] | null;
         error = err2;
@@ -320,8 +312,8 @@ export const fanPostsService = {
             },
             imageUrl: images[0],
             additionalImages: images.slice(1),
-            likes: (post as any).likes_count ?? (post as any).likes ?? 0,
-            comments: (post as any).comments_count ?? (post as any).comments ?? 0,
+            likes: (post as any).likes ?? 0,
+            comments: (post as any).comments ?? 0,
             isPremium: Boolean((post as any).is_premium),
             unlockPrice: Number((post as any).credits_cost) || 0
           };
