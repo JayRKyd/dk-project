@@ -153,11 +153,7 @@ export const fanPostsService = {
           likes_count,
           comments_count,
           created_at,
-          author_id,
-          profiles!fan_posts_author_id_fkey (
-            name,
-            image_url
-          )
+          author_id
         `)
         .eq('status', 'published')
         .order('created_at', { ascending: false });
@@ -166,6 +162,18 @@ export const fanPostsService = {
         console.error('Error fetching fan posts:', postsError);
         throw new Error('Failed to load fan posts.');
       }
+
+      // Fetch author profiles separately (no FK defined)
+      const authorIds = [...new Set((posts || []).map((p: any) => p.author_id))];
+      const { data: profileRows, error: profileErr } = await supabase
+        .from('profiles')
+        .select('user_id, name, image_url')
+        .in('user_id', authorIds);
+      if (profileErr) {
+        console.warn('Warning: failed to load author profiles for fan posts:', profileErr);
+      }
+      const profileMap = new Map<string, { name?: string; image_url?: string }>();
+      (profileRows || []).forEach((p: any) => profileMap.set(p.user_id, { name: p.name, image_url: p.image_url }));
 
       // Get media for each post
       const postsWithMedia = await Promise.all(
@@ -191,10 +199,11 @@ export const fanPostsService = {
             .eq('user_id', user.id)
             .single();
 
+          const authorProfile = profileMap.get(post.author_id) || {} as any;
           return {
             id: post.id,
-            authorName: (post.profiles as any)?.name || 'Anonymous',
-            authorImage: (post.profiles as any)?.image_url || '',
+            authorName: (authorProfile as any).name || 'Anonymous',
+            authorImage: (authorProfile as any).image_url || '',
             date: this.formatRelativeDate(post.created_at),
             content: post.content,
             theme: post.theme,
@@ -236,11 +245,7 @@ export const fanPostsService = {
           likes_count,
           comments_count,
           created_at,
-          author_id,
-          profiles!fan_posts_author_id_fkey (
-            name,
-            image_url
-          )
+          author_id
         `)
         .eq('author_id', authorId)
         .eq('status', 'published')
@@ -250,6 +255,13 @@ export const fanPostsService = {
         console.error('Error fetching author fan posts:', error);
         throw new Error('Failed to load author posts.');
       }
+
+      // Fetch author profile once
+      const { data: profileRow } = await supabase
+        .from('profiles')
+        .select('user_id, name, image_url')
+        .eq('user_id', authorId)
+        .maybeSingle();
 
       // Process posts similar to getAllFanPosts
       const postsWithMedia = await Promise.all(
@@ -269,8 +281,8 @@ export const fanPostsService = {
 
           return {
             id: post.id,
-            authorName: (post.profiles as any)?.name || 'Anonymous',
-            authorImage: (post.profiles as any)?.image_url || '',
+            authorName: (profileRow as any)?.name || 'Anonymous',
+            authorImage: (profileRow as any)?.image_url || '',
             date: this.formatRelativeDate(post.created_at),
             content: post.content,
             theme: post.theme,
@@ -323,11 +335,7 @@ export const fanPostsService = {
           likes_count,
           comments_count,
           created_at,
-          author_id,
-          profiles!fan_posts_author_id_fkey (
-            name,
-            image_url
-          )
+          author_id
         `)
         .single();
 

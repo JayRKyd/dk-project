@@ -277,31 +277,42 @@ export const profileService = {
         return this.getProfileById(slug);
       }
 
-      // If not a UUID, try to find by name
+      // If not a UUID, try to find by name, then by username
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select(`
-          id,
-          name,
-          image_url,
-          rating,
-          loves,
-          description,
-          price,
-          location,
-          created_at,
-          updated_at
-        `)
+        .select('id, name, image_url, rating, loves, description, price, location, created_at, updated_at')
         .eq('name', slug)
-        .single();
+        .maybeSingle();
+
+      let resolvedProfile = profile;
+      if (!resolvedProfile) {
+        // Attempt to resolve via users.username mapping
+        const { data: userRow } = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', slug)
+          .maybeSingle();
+        if (userRow) {
+          const { data: profileByUser } = await supabase
+            .from('profiles')
+            .select('id, name, image_url, rating, loves, description, price, location, created_at, updated_at')
+            .eq('user_id', userRow.id)
+            .maybeSingle();
+          resolvedProfile = profileByUser || null;
+        }
+      }
 
       if (profileError) {
         console.error('Error fetching profile by slug:', profileError);
+        // continue to null handling
+      }
+
+      if (!resolvedProfile) {
         return null;
       }
 
       // Use the same logic as getProfileById
-      return this.getProfileById(profile.id);
+      return this.getProfileById(resolvedProfile.id);
     } catch (error) {
       console.error('Error fetching profile by slug:', error);
       return null;
