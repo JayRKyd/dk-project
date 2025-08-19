@@ -857,7 +857,7 @@ export default function LadyDashboardFree() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-bold text-gray-900">Upcoming Bookings</h2>
               <Link 
-                to="/dashboard/lady/bookings"
+                to="/dashboard/lady/schedule"
                 className="text-pink-500 hover:text-pink-600 text-sm font-medium"
               >
                 View All

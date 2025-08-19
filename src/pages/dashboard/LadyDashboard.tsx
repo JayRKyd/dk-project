@@ -34,6 +34,8 @@ export default function LadyDashboard() {
     profileCompletion: { completionPercentage: 0, missingItems: [] },
     notifications: [],
   });
+  const [showVerifiedModal, setShowVerifiedModal] = useState(false);
+  const isVerified = profile?.verification_status === 'verified' || (profile as any)?.is_verified === true;
 
   useEffect(() => {
     const load = async () => {
@@ -117,7 +119,7 @@ export default function LadyDashboard() {
             />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Welcome back, Melissa!</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Welcome back, {profile?.name || (profile as any)?.username || 'Lady'}!</h1>
             <p className="text-gray-600">Here's what's happening with your profile today.</p>
           </div>
         </div>
@@ -136,13 +138,25 @@ export default function LadyDashboard() {
             <Settings className="h-5 w-5" />
             <span>Advertisement Settings</span>
           </Link>
-          <Link
-            to="/verification"
-            className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            <Shield className="h-5 w-5" />
-            <span>Verify my Profile</span>
-          </Link>
+          {isVerified ? (
+            <button
+              type="button"
+              onClick={() => setShowVerifiedModal(true)}
+              className="flex items-center gap-2 bg-gray-300 text-white px-4 py-2 rounded-lg cursor-not-allowed"
+              aria-disabled="true"
+            >
+              <Shield className="h-5 w-5" />
+              <span>Verified</span>
+            </button>
+          ) : (
+            <Link
+              to="/verification"
+              className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              <Shield className="h-5 w-5" />
+              <span>Verify my Profile</span>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -279,7 +293,7 @@ export default function LadyDashboard() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-bold text-gray-900">Upcoming Bookings</h2>
               <Link 
-                to="/dashboard/lady/bookings"
+                to="/dashboard/lady/schedule"
                 className="text-pink-500 hover:text-pink-600 text-sm font-medium"
               >
                 View All
@@ -537,6 +551,23 @@ export default function LadyDashboard() {
           </div>
         </div>
       </div>
+      {showVerifiedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Already Verified</h3>
+            <p className="text-gray-600 mb-4">Your account is already verified. No further action is required.</p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-md bg-pink-500 text-white hover:bg-pink-600"
+                onClick={() => setShowVerifiedModal(false)}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
