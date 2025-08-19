@@ -130,7 +130,8 @@ function AppRoutes() {
       <Route path="/ladies/pro/:id" element={<AdvertisementPro />} />
       <Route path="/clubs/:id" element={<ClubAdvertisement />} />
       <Route path="/faq" element={<FAQ />} />
-      <Route path="/write-review/:id" element={<WriteReview />} />
+      {/* Club reviews use an explicit club prefix to avoid param collision */}
+      <Route path="/write-review/club/:id" element={<WriteReview />} />
       <Route path="/booking/:id" element={<Booking />} />
       <Route path="/support" element={<Support />} />
       <Route path="/contact" element={<Contact />} />

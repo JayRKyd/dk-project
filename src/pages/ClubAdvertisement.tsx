@@ -314,7 +314,7 @@ export default function ClubAdvertisement() {
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Reviews</h2>
                 <Link
-                  to={`/write-review/${id}`}
+                  to={`/write-review/club/${id}`}
                   className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
                 >
                   <Star className="h-5 w-5" />

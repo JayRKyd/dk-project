@@ -11,8 +11,8 @@ export default function ClientSettings() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUsernameForm, setShowUsernameForm] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
-  const [currentUsername, setCurrentUsername] = useState('JohnDoe123');
-  const [currentEmail, setCurrentEmail] = useState('john.doe@example.com');
+  const [currentUsername, setCurrentUsername] = useState(user?.user_metadata?.username || user?.email?.split('@')[0] || '');
+  const [currentEmail, setCurrentEmail] = useState(user?.email || '');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -28,8 +28,10 @@ export default function ClientSettings() {
     try {
       setUploadingAvatar(true);
       const uploaded = await uploadImage(file, 'profile-pictures', 'avatars', user.id);
-      // Save to profiles.image_url
-      await supabase.from('profiles').upsert({ user_id: user.id, image_url: uploaded.url }, { onConflict: 'user_id' });
+      // Save to profiles.image_url (let unique constraint handle upsert)
+      await supabase.from('profiles').upsert({ user_id: user.id, image_url: uploaded.url });
+      // Also update auth metadata so dashboards reflect immediately
+      await supabase.auth.updateUser({ data: { avatar_url: uploaded.url } });
       setAvatarUrl(uploaded.url);
     } catch (err) {
       console.error('Avatar upload failed', err);
@@ -39,30 +41,57 @@ export default function ClientSettings() {
     }
   };
 
-  const handlePasswordChange = (e: React.FormEvent) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle password change logic here
-    console.log('Password change:', { password, newPassword });
-    setShowPasswordForm(false);
-    setPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+    if (newPassword !== confirmPassword) {
+      alert('New passwords do not match');
+      return;
+    }
+    try {
+      // Supabase doesn’t require current password for update when authenticated
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      alert('Password updated successfully');
+      setShowPasswordForm(false);
+      setPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      console.error('Password update failed', err);
+      alert(err?.message || 'Failed to update password');
+    }
   };
 
-  const handleUsernameChange = (e: React.FormEvent) => {
+  const handleUsernameChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle username change logic here
-    console.log('Username change:', username);
-    setShowUsernameForm(false);
-    setUsername('');
+    if (!user?.id) return;
+    try {
+      const { error } = await supabase.from('users').update({ username }).eq('id', user.id);
+      if (error) throw error;
+      const { error: authError } = await supabase.auth.updateUser({ data: { username } });
+      if (authError) throw authError;
+      setCurrentUsername(username);
+      setShowUsernameForm(false);
+      setUsername('');
+    } catch (err: any) {
+      console.error('Username update failed', err);
+      alert(err?.message || 'Failed to update username');
+    }
   };
 
-  const handleEmailChange = (e: React.FormEvent) => {
+  const handleEmailChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle email change logic here
-    console.log('Email change:', email);
-    setShowEmailForm(false);
-    setEmail('');
+    try {
+      const { error } = await supabase.auth.updateUser({ email });
+      if (error) throw error;
+      setCurrentEmail(email);
+      alert('Email update requested. Please confirm via the email link.');
+      setShowEmailForm(false);
+      setEmail('');
+    } catch (err: any) {
+      console.error('Email update failed', err);
+      alert(err?.message || 'Failed to update email');
+    }
   };
 
   const handleAccountDelete = (e: React.FormEvent) => {
