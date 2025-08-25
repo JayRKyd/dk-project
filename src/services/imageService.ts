@@ -9,6 +9,10 @@ const WATERMARK_FONT = '24px Arial';
 const WATERMARK_COLOR = 'rgba(255, 255, 255, 0.7)';
 const WATERMARK_TEXT = 'DateKelly.com';
 
+// Allowed types and size (5 MB) per guidelines
+const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+
 /**
  * Resize an image to fit within maximum dimensions while maintaining aspect ratio
  */
@@ -153,6 +157,15 @@ export const uploadImage = async (
   userId: string
 ): Promise<{ path: string; url: string }> => {
   try {
+    // Validate type and size before any processing
+    if (!ALLOWED_IMAGE_MIME_TYPES.includes(file.type)) {
+      throw new Error(`Only JPG, PNG, or WebP images are allowed (received ${file.type || 'unknown type'}).`);
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      const mb = (file.size / (1024 * 1024)).toFixed(2);
+      throw new Error(`File is too large: ${mb} MB. Maximum allowed size is 5 MB.`);
+    }
+
     // Process the image (resize and add watermark)
     const processedImage = await processImage(file);
     
@@ -198,7 +211,9 @@ export const uploadImage = async (
     }
     
     if (uploadError) {
-      throw uploadError;
+      // Normalize Supabase error into a user-friendly message
+      const message = (uploadError as any)?.message || 'Upload failed due to a storage error.';
+      throw new Error(message);
     }
     
     if (!uploadData) {
@@ -210,10 +225,20 @@ export const uploadImage = async (
       .from(bucket)
       .getPublicUrl(uploadData.path);
     
-    return {
+    const result = {
       path: uploadData.path,
       url: urlData.publicUrl
     };
+
+    // Record upload for moderation
+    try {
+      const { ContentModerationService } = await import('./contentModerationService');
+      await ContentModerationService.recordUploadedImages(userId, [{ path: result.path, url: result.url }]);
+    } catch (_) {
+      // Non-fatal if moderation recording fails
+    }
+
+    return result;
   } catch (error) {
     console.error('Error processing and uploading image:', error);
     throw error;

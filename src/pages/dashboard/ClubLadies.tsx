@@ -27,7 +27,7 @@ interface Lady {
   rating?: number;
   loves?: number;
   isVerified: boolean;
-  status: 'active' | 'inactive' | 'suspended';
+  status: 'active' | 'inactive' | 'suspended' | 'pending' | 'left';
   // Additional database fields
   club_id: string;
   lady_id: string;
@@ -139,7 +139,7 @@ export default function ClubLadies() {
   };
 
   // Show loading state
-  if (loading.ladies) {
+  if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-center py-12">
@@ -276,6 +276,11 @@ export default function ClubLadies() {
                 {lady.status === 'active' && (
                   <span className="bg-green-500 text-white px-2 py-1 rounded-full text-sm">
                     Active
+                  </span>
+                )}
+                {lady.status === 'pending' && (
+                  <span className="bg-yellow-500 text-white px-2 py-1 rounded-full text-sm">
+                    Pending
                   </span>
                 )}
                 {lady.status === 'inactive' && (

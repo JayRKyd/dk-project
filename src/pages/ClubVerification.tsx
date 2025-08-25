@@ -347,7 +347,7 @@ export default function ClubVerification() {
                   className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 ${
                     formErrors.business_phone ? 'border-red-300' : 'border-gray-300'
                   }`}
-                  placeholder="+1 234 567 8900"
+                  placeholder="+31 6 11 222 333 or 0611222333"
                 />
                 {formErrors.business_phone && (
                   <p className="text-sm text-red-600 mt-1">{formErrors.business_phone}</p>
@@ -365,7 +365,7 @@ export default function ClubVerification() {
                   className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 ${
                     formErrors.business_website ? 'border-red-300' : 'border-gray-300'
                   }`}
-                  placeholder="https://yourclub.com"
+                  placeholder="https://yourclub.com or yourclub.nl"
                 />
                 {formErrors.business_website && (
                   <p className="text-sm text-red-600 mt-1">{formErrors.business_website}</p>

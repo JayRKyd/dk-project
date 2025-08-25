@@ -28,6 +28,10 @@ interface FormData {
   website: string;
   email: string;
   phone: string;
+
+  // Visit Options
+  clubVisitEnabled: boolean;
+  escortVisitEnabled: boolean;
   
   // Location
   address: string;
@@ -73,6 +77,7 @@ interface FormData {
 
 const tabs = [
   { id: 'info', label: 'Club Info', icon: Building2 },
+  { id: 'visits', label: 'Visit Options', icon: MapPin },
   { id: 'photos', label: 'Photos', icon: Camera },
   { id: 'location', label: 'Location', icon: MapPin },
   { id: 'facilities', label: 'Facilities', icon: Building2 },
@@ -91,6 +96,8 @@ export default function ClubSettings() {
     website: '',
     email: '',
     phone: '',
+    clubVisitEnabled: false,
+    escortVisitEnabled: false,
     address: '',
     city: '',
     postalCode: '',
@@ -262,6 +269,8 @@ export default function ClubSettings() {
           website: clubProfile.website || '',
           email: clubProfile.email || '',
           phone: clubProfile.phone || '',
+          clubVisitEnabled: clubProfile.club_visit_enabled || false,
+          escortVisitEnabled: clubProfile.escort_visit_enabled || false,
           address: clubProfile.address || '',
           city: clubProfile.city || '',
           postalCode: clubProfile.postal_code || '',
@@ -327,6 +336,8 @@ export default function ClubSettings() {
         website: formData.website,
         email: formData.email,
         phone: formData.phone,
+        club_visit_enabled: formData.clubVisitEnabled,
+        escort_visit_enabled: formData.escortVisitEnabled,
         address: formData.address,
         city: formData.city,
         postal_code: formData.postalCode,
@@ -534,6 +545,80 @@ export default function ClubSettings() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       placeholder="https://yourclub.com (optional)"
                     />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Visit Options Tab */}
+            {activeTab === 'visits' && (
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-6">Visit Options</h2>
+                <div className="space-y-6">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Service Types</h3>
+                    <p className="text-gray-600 mb-4">
+                      Choose which visit options your club offers to clients. These will be displayed on your public club page.
+                    </p>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-white rounded-lg border">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center">
+                            <Building2 className="h-6 w-6 text-pink-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-gray-900">Club Visit</h4>
+                            <p className="text-sm text-gray-600">Clients visit your club location</p>
+                          </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.clubVisitEnabled}
+                            onChange={(e) => setFormData(prev => ({ ...prev, clubVisitEnabled: e.target.checked }))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pink-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
+                        </label>
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 bg-white rounded-lg border">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                            <MapPin className="h-6 w-6 text-purple-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-gray-900">Escort Service</h4>
+                            <p className="text-sm text-gray-600">Your ladies visit clients at their location</p>
+                          </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.escortVisitEnabled}
+                            onChange={(e) => setFormData(prev => ({ ...prev, escortVisitEnabled: e.target.checked }))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                      <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0">
+                          <AlertCircle className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-medium text-blue-900">Display on Public Page</h4>
+                          <p className="text-sm text-blue-700 mt-1">
+                            The visit options you enable here will be displayed on your public club page under "Services" section.
+                            Clients will see which services you offer when browsing your profile.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

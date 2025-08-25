@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Star, MessageCircle, Heart, ThumbsDown, Calendar, User, Reply, Send, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
@@ -180,7 +180,7 @@ export default function LadyReviews() {
                 </div>
                 <div>
                   <div className="font-medium text-gray-900">
-                    {review.author.isAnonymous ? 'Anonymous' : review.author.name}
+                    {review.author.name}
                   </div>
                   <div className="text-sm text-gray-500 flex items-center gap-2">
                     <Calendar className="h-4 w-4" />

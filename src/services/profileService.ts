@@ -54,6 +54,9 @@ export interface ReviewData {
   likes: number;
   dislikes: number;
   created_at: string;
+  author?: {
+    username: string;
+  };
 }
 
 export interface OpeningHours {
@@ -159,7 +162,7 @@ export const profileService = {
         console.warn('Error fetching rates:', ratesError);
       }
 
-      // Fetch reviews
+      // Fetch reviews with author information
       const { data: reviews, error: reviewsError } = await supabase
         .from('reviews')
         .select(`
@@ -169,7 +172,10 @@ export const profileService = {
           negatives,
           likes,
           dislikes,
-          created_at
+          created_at,
+          users!reviews_author_id_fkey (
+            username
+          )
         `)
         .eq('profile_id', id)
         .order('created_at', { ascending: false });
@@ -259,7 +265,18 @@ export const profileService = {
           descent: details?.descent || '',
           category: details?.category || ''
         },
-        reviews: reviews || [],
+        reviews: (reviews || []).map(review => ({
+          id: review.id,
+          rating: review.rating,
+          positives: review.positives || [],
+          negatives: review.negatives || [],
+          likes: review.likes || 0,
+          dislikes: review.dislikes || 0,
+          created_at: review.created_at,
+          author: review.users ? {
+            username: Array.isArray(review.users) ? (review.users[0] as any)?.username : (review.users as any).username
+          } : undefined
+        })),
         opening_hours
       };
 

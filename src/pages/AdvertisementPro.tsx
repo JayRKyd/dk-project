@@ -43,7 +43,7 @@ function AdvertisementPro() {
   const rates = useMemo(() => profileData?.rates || [], [profileData]);
   const reviews = useMemo(() => (profileData?.reviews || []).map(r => ({
     id: r.id,
-    authorName: 'Anonymous',
+    authorName: r.author?.username || 'Client',
     serviceName: profileData?.name || 'Unknown',
     serviceLink: `/ladies/${profileData?.id ?? ''}`,
     date: r.created_at,

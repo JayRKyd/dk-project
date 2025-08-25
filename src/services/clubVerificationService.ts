@@ -140,11 +140,16 @@ export const updateClubBusinessInfo = async (
       return { success: false, error: 'Business website is required' };
     }
 
-    // Validate website URL format
-    try {
-      new URL(businessInfo.business_website);
-    } catch {
-      return { success: false, error: 'Please enter a valid website URL' };
+    // Validate and normalize website URL format
+    const websiteValidation = validateBusinessWebsite(businessInfo.business_website);
+    if (!websiteValidation.valid) {
+      return { success: false, error: websiteValidation.error };
+    }
+
+    // Normalize the website URL to ensure it has https:// protocol
+    let normalizedWebsite = businessInfo.business_website.trim();
+    if (!normalizedWebsite.match(/^https?:\/\//i)) {
+      normalizedWebsite = 'https://' + normalizedWebsite;
     }
 
     // Update user record
@@ -154,7 +159,7 @@ export const updateClubBusinessInfo = async (
         business_name: businessInfo.business_name.trim(),
         business_type: businessInfo.business_type.trim(),
         business_phone: businessInfo.business_phone.trim(),
-        business_website: businessInfo.business_website.trim(),
+        business_website: normalizedWebsite,
         updated_at: new Date().toISOString()
       })
       .eq('id', clubId);
@@ -356,14 +361,41 @@ export const validateBusinessWebsite = (url: string): { valid: boolean; error?: 
     return { valid: false, error: 'Website URL is required' };
   }
 
+  // Remove whitespace and check for empty string
+  const cleanUrl = url.trim();
+  if (!cleanUrl) {
+    return { valid: false, error: 'Website URL is required' };
+  }
+
   try {
-    const urlObj = new URL(url);
-    if (!['http:', 'https:'].includes(urlObj.protocol)) {
-      return { valid: false, error: 'URL must start with http:// or https://' };
+    // If no protocol is provided, prepend https:// for validation
+    let urlToValidate = cleanUrl;
+    if (!urlToValidate.match(/^https?:\/\//i)) {
+      urlToValidate = 'https://' + urlToValidate;
     }
+
+    const urlObj = new URL(urlToValidate);
+
+    // Validate hostname exists and has valid format
+    if (!urlObj.hostname) {
+      return { valid: false, error: 'Please enter a valid website URL or domain' };
+    }
+
+    // Check for valid domain format (basic check for TLD)
+    const hostnameParts = urlObj.hostname.split('.');
+    if (hostnameParts.length < 2) {
+      return { valid: false, error: 'Please enter a valid domain (e.g., example.com)' };
+    }
+
+    // Check that TLD is at least 2 characters (allows any TLD like .nl, .com, .co.uk, etc.)
+    const tld = hostnameParts[hostnameParts.length - 1];
+    if (tld.length < 2) {
+      return { valid: false, error: 'Please enter a valid domain with proper TLD' };
+    }
+
     return { valid: true };
   } catch {
-    return { valid: false, error: 'Please enter a valid URL' };
+    return { valid: false, error: 'Please enter a valid website URL or domain (e.g., https://example.com or example.nl)' };
   }
 };
 
@@ -375,10 +407,24 @@ export const validateBusinessPhone = (phone: string): { valid: boolean; error?: 
     return { valid: false, error: 'Phone number is required' };
   }
 
-  // Basic phone validation - adjust regex as needed for international formats
-  const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-  if (!phoneRegex.test(phone.replace(/[\s\-\(\)]/g, ''))) {
-    return { valid: false, error: 'Please enter a valid phone number' };
+  // Remove all non-digit characters except + for international prefix
+  const cleanPhone = phone.replace(/[\s\-\(\)\.]/g, '');
+
+  // Support international formats:
+  // - +31 6 11 222 333 (Dutch mobile)
+  // - 0031 6 11 222 333 (Dutch international)
+  // - 0611222333 (Dutch local)
+  // - +44 20 7123 4567 (UK)
+  // - +1 234 567 8900 (US)
+  // - 0044 20 7123 4567 (UK international)
+  const internationalRegex = /^\+[1-9]\d{1,14}$/; // E.164 format with + prefix
+  const internationalWithoutPlus = /^00[1-9]\d{1,14}$/; // International format with 00 prefix
+  const localFormat = /^[1-9]\d{1,15}$/; // Local format without international prefix
+
+  if (!internationalRegex.test(cleanPhone) &&
+      !internationalWithoutPlus.test(cleanPhone) &&
+      !localFormat.test(cleanPhone)) {
+    return { valid: false, error: 'Please enter a valid phone number (e.g., +31 6 11 222 333, 0031 6 11 222 333, or 0611222333)' };
   }
 
   return { valid: true };

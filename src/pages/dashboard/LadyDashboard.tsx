@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useUserProfile } from '../../hooks/useUserProfile';
-import { Heart, Settings, Star, MessageCircle, Gift, Camera, DollarSign, Calendar, Clock, TrendingUp, Eye, Bell, ArrowUp, Coins, Shield } from 'lucide-react';
+import { Heart, Settings, Star, MessageCircle, Gift, Camera, DollarSign, Calendar, Clock, TrendingUp, Eye, Bell, ArrowUp, Coins, Shield, X } from 'lucide-react';
 import { getProfileStats, getRecentActivities, getProfileCompletion } from '../../services/profileStatsService';
 import { getAdvertisementStatus, formatTimeUntilExpiry } from '../../services/advertisementService';
 import { getUpcomingBookings } from '../../services/bookingService';
 import { giftService } from '../../services/giftService';
 import { notificationsService, NotificationItem } from '../../services/notificationsService';
+import { useAuth } from '../../contexts/AuthContext';
 
 
 interface DashboardState {
@@ -19,9 +20,11 @@ interface DashboardState {
   credits: number;
   profileCompletion: { completionPercentage: number; missingItems: string[] };
   notifications: (NotificationItem & { is_read?: boolean })[];
+  currentClubId?: string;
 }
 
 export default function LadyDashboard() {
+  const { user } = useAuth();
   const { profile } = useUserProfile();
   const [dashboardData, setDashboardData] = useState<DashboardState>({
     membershipTier: 'PRO',
@@ -33,6 +36,7 @@ export default function LadyDashboard() {
     credits: 0,
     profileCompletion: { completionPercentage: 0, missingItems: [] },
     notifications: [],
+    currentClubId: undefined,
   });
   const [showVerifiedModal, setShowVerifiedModal] = useState(false);
   const isVerified = profile?.verification_status === 'verified' || (profile as any)?.is_verified === true;
@@ -60,7 +64,7 @@ export default function LadyDashboard() {
       const acts = await getRecentActivities(profile.id, 5);
       const recent = acts.map(a => ({
         type: a.type,
-        user: a.user?.username || 'Anonymous',
+        user: a.user?.username || 'Client',
         time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       })) as DashboardState['recent'];
 
@@ -71,6 +75,19 @@ export default function LadyDashboard() {
       let notifications: NotificationItem[] = [];
       try {
         notifications = await notificationsService.list(profile.id, 3);
+      } catch {}
+
+      // Resolve current club id from club_ladies where this lady is active
+      let currentClubId: string | undefined = undefined;
+      try {
+        const { data: cl } = await (await import('../../lib/supabase')).supabase
+          .from('club_ladies')
+          .select('club_id')
+          .eq('lady_id', user?.id)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+        currentClubId = cl?.club_id;
       } catch {}
 
       setDashboardData(prev => ({
@@ -86,6 +103,7 @@ export default function LadyDashboard() {
           missingItems: completion.missingItems,
         },
         notifications,
+        currentClubId,
       }));
     };
     load();
@@ -461,6 +479,23 @@ export default function LadyDashboard() {
                 <Star className="h-6 w-6 text-pink-500 mb-2" />
                 <span className="text-sm font-medium text-gray-900 text-center">Reviews</span>
               </Link>
+              <button
+                onClick={async () => {
+                  try {
+                    const clubId = (dashboardData as any)?.currentClubId;
+                    if (!clubId || !user?.id) return;
+                    await (await import('../../services/clubService')).clubService.ladyLeaveClub(clubId, user.id);
+                    alert('You have left the club.');
+                    window.location.reload();
+                  } catch (e) {
+                    console.error('Leave club failed', e);
+                  }
+                }}
+                className="flex flex-col items-center justify-center p-4 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+              >
+                <X className="h-6 w-6 text-red-500 mb-2" />
+                <span className="text-sm font-medium text-gray-900 text-center">Leave Club</span>
+              </button>
               <Link
                 to="/dashboard/lady/settings"
                 className="flex flex-col items-center justify-center p-4 bg-pink-50 rounded-lg hover:bg-pink-100 transition-colors"
@@ -540,6 +575,41 @@ export default function LadyDashboard() {
                       <div>
                         <p className="text-sm font-medium text-gray-900">{notification.message || notification.type}</p>
                         <p className="text-xs text-gray-500">{formatTimeAgo(notification.created_at)}</p>
+                        {notification.type === 'club_invite' && notification.data?.club_id && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <button
+                              className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                              onClick={async () => {
+                                try {
+                                  if (!user?.id) return;
+                                  await (await import('../../services/clubService')).clubService.approveLadyInvite(notification.data.club_id, user.id);
+                                  await notificationsService.markRead(notification.id);
+                                  // simple refresh
+                                  window.location.reload();
+                                } catch (e) {
+                                  console.error('Approve failed', e);
+                                }
+                              }}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                              onClick={async () => {
+                                try {
+                                  if (!user?.id) return;
+                                  await (await import('../../services/clubService')).clubService.declineLadyInvite(notification.data.club_id, user.id);
+                                  await notificationsService.markRead(notification.id);
+                                  window.location.reload();
+                                } catch (e) {
+                                  console.error('Decline failed', e);
+                                }
+                              }}
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

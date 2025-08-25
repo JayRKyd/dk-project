@@ -36,6 +36,8 @@ export default function ClubAdvertisement() {
 	const [memberSince, setMemberSince] = useState<string>('');
 	const [viewsOnProfile, setViewsOnProfile] = useState<number>(0);
 	const [lastOnline, setLastOnline] = useState<string>('');
+	const [clubVisitEnabled, setClubVisitEnabled] = useState<boolean>(false);
+	const [escortVisitEnabled, setEscortVisitEnabled] = useState<boolean>(false);
 
 	useEffect(() => {
     const load = async () => {
@@ -67,6 +69,8 @@ export default function ClubAdvertisement() {
           setDescription((club as any).description || '');
           setWebsite((club as any).website || '');
           setPhone((club as any).phone || '');
+          setClubVisitEnabled((club as any).club_visit_enabled || false);
+          setEscortVisitEnabled((club as any).escort_visit_enabled || false);
 					if ((club as any).created_at) {
 						setMemberSince(new Date((club as any).created_at).toLocaleDateString());
 					}
@@ -89,11 +93,13 @@ export default function ClubAdvertisement() {
         // Load club ladies
         try {
           const list = await clubService.getClubLadies(id);
-          const mapped = (list || []).map((cl: any) => ({
-            id: cl.lady_id,
-            name: cl.profile?.name || cl.lady?.username || 'Lady',
-            imageUrl: cl.profile?.image_url,
-          }));
+          const mapped = (list || [])
+            .filter((cl: any) => cl.status !== 'pending' && cl.status !== 'left')
+            .map((cl: any) => ({
+              id: cl.lady_id,
+              name: cl.profile?.name || cl.lady?.username || 'Lady',
+              imageUrl: cl.profile?.image_url,
+            }));
           setLadiesList(mapped);
         } catch (_) {}
         // Facilities
@@ -147,12 +153,32 @@ export default function ClubAdvertisement() {
 
   const navigateFullscreen = (direction: 'prev' | 'next') => {
     if (fullscreenImage === null) return;
-    
+
     if (direction === 'prev') {
       setFullscreenImage(prev => (prev > 0 ? prev - 1 : images.length - 1));
     } else {
       setFullscreenImage(prev => (prev < images.length - 1 ? prev + 1 : 0));
     }
+  };
+
+  const formatPhoneForWhatsApp = (phone: string) => {
+    // Remove all non-digit characters except + at the beginning
+    const cleaned = phone.replace(/[\s\-\(\)\.]/g, '');
+    // Ensure it starts with + for international format
+    if (cleaned.startsWith('+')) {
+      return cleaned;
+    }
+    // If it starts with 00 (international dialing), convert to +
+    if (cleaned.startsWith('00')) {
+      return '+' + cleaned.substring(2);
+    }
+    // For local numbers, assume they're already in E.164 format
+    return cleaned;
+  };
+
+  const getWhatsAppUrl = (phone: string) => {
+    const formattedPhone = formatPhoneForWhatsApp(phone);
+    return `https://wa.me/${formattedPhone}`;
   };
 
   return (
@@ -352,8 +378,11 @@ export default function ClubAdvertisement() {
               <div className="bg-pink-100 p-6 rounded-lg">
                 <h2 className="text-xl font-bold mb-3">Visit Options</h2>
                 <div className="space-y-2 text-gray-700">
-                  <p>✓ You visit us - Club visit</p>
-                  <p>✓ Our ladies visit you - Escort</p>
+                  {clubVisitEnabled && <p>✓ You visit us - Club visit</p>}
+                  {escortVisitEnabled && <p>✓ Our ladies visit you - Escort</p>}
+                  {!clubVisitEnabled && !escortVisitEnabled && (
+                    <p className="text-gray-500 italic">No visit options configured</p>
+                  )}
                 </div>
               </div>
               
@@ -390,9 +419,21 @@ export default function ClubAdvertisement() {
                     <button className="bg-pink-500 text-white p-4 rounded-lg flex items-center justify-center hover:bg-pink-600 transition-colors">
                       <MessageCircle className="h-6 w-6" />
                     </button>
-                    <button className="bg-green-500 text-white p-4 rounded-lg flex items-center justify-center hover:bg-green-600 transition-colors">
-                      <img src="https://raw.githubusercontent.com/stackblitz/stackblitz-images/main/whatsapp-white.png" alt="WhatsApp" className="h-6 w-6" />
-                    </button>
+                    {phone ? (
+                      <a
+                        href={getWhatsAppUrl(phone)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="bg-green-500 text-white p-4 rounded-lg flex items-center justify-center hover:bg-green-600 transition-colors"
+                        title="Chat on WhatsApp"
+                      >
+                        <img src="https://raw.githubusercontent.com/stackblitz/stackblitz-images/main/whatsapp-white.png" alt="WhatsApp" className="h-6 w-6" />
+                      </a>
+                    ) : (
+                      <div className="bg-gray-300 text-white p-4 rounded-lg flex items-center justify-center cursor-not-allowed">
+                        <img src="https://raw.githubusercontent.com/stackblitz/stackblitz-images/main/whatsapp-white.png" alt="WhatsApp" className="h-6 w-6 opacity-50" />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

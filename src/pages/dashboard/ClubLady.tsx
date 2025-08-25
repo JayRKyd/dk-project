@@ -220,6 +220,8 @@ export default function ClubLady() {
 		try {
 			await clubService.addLadyToClub(clubProfile.id, linkResult.id, 70);
 			await actions.fetchClubLadies(clubProfile.id);
+			// Show success inline and navigate back
+			alert(`Invite sent to ${linkResult.username || linkResult.email}. Status: pending`);
 			navigate('/dashboard/club/ladies');
 		} catch (err) {
 			setFindError(err instanceof Error ? err.message : 'Failed to link lady');

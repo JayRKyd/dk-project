@@ -58,7 +58,7 @@ export default function Advertisement() {
   // Transform reviews to match ReviewCard interface
   const reviews = profileData?.reviews?.map(review => ({
     id: review.id,
-    authorName: 'Anonymous',
+    authorName: review.author?.username || 'Client',
     serviceName: profileData?.name || 'Unknown',
     serviceLink: `/ladies/${id}`,
     date: review.created_at,

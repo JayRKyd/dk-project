@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 
-export type NotificationType = 'view' | 'love' | 'gift' | 'review' | 'booking' | 'system' | 'message';
+export type NotificationType = 'view' | 'love' | 'gift' | 'review' | 'booking' | 'system' | 'message' | 'club_invite';
 
 export interface NotificationItem {
   id: string;

@@ -129,7 +129,7 @@ export default function ClubReviews() {
                   <User className="h-5 w-5 text-gray-600" />
                 </div>
                 <div>
-                  <div className="font-medium text-gray-900">{review.author.isAnonymous ? 'Anonymous' : review.author.name}</div>
+                  <div className="font-medium text-gray-900">{review.author.name}</div>
                   <div className="text-sm text-gray-500 flex items-center gap-2">
                     <Calendar className="h-4 w-4" />
                     {formatDate(review.createdAt)}

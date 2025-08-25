@@ -22,6 +22,8 @@ export interface ClubProfile {
   longitude?: number;
   parking_info?: string;
   public_transport_info?: string;
+  club_visit_enabled?: boolean;
+  escort_visit_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -353,6 +355,7 @@ export const clubService = {
   },
 
   async addLadyToClub(clubId: string, ladyId: string, revenueSharePercentage: number, monthlyFee?: number): Promise<ClubLady> {
+    // Attempt to insert as pending to start approval flow; guard duplicates
     const { data, error } = await supabase
       .from('club_ladies')
       .insert({
@@ -360,7 +363,8 @@ export const clubService = {
         lady_id: ladyId,
         revenue_share_percentage: revenueSharePercentage,
         monthly_fee: monthlyFee,
-        status: 'active'
+        status: 'pending',
+        join_date: new Date().toISOString()
       })
       .select(`
         *,
@@ -368,8 +372,64 @@ export const clubService = {
         profile:profiles!lady_id(*)
       `)
       .single();
-    
+
+    if (error) {
+      // Surface clearer duplicate/permission errors
+      const message = (error as any)?.message || 'Failed to link lady to club.';
+      throw new Error(message);
+    }
+    // Fire a notification to the lady's profile if available
+    try {
+      // Lookup lady profile id
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', ladyId)
+        .maybeSingle();
+      if (prof?.id) {
+        await supabase
+          .from('notifications')
+          .insert({
+            profile_id: prof.id,
+            type: 'club_invite',
+            message: 'A club has linked you and is awaiting your approval.',
+            data: { club_id: clubId },
+          });
+      }
+    } catch (_) {
+      // non-fatal
+    }
+
+    return data as ClubLady;
+  },
+
+  async approveLadyInvite(clubId: string, ladyId: string): Promise<void> {
+    const { error } = await supabase
+      .from('club_ladies')
+      .update({ status: 'active', approved_at: new Date().toISOString() })
+      .eq('club_id', clubId)
+      .eq('lady_id', ladyId)
+      .eq('status', 'pending');
     if (error) throw error;
-    return data;
-  }
+  },
+
+  async declineLadyInvite(clubId: string, ladyId: string): Promise<void> {
+    const { error } = await supabase
+      .from('club_ladies')
+      .delete()
+      .eq('club_id', clubId)
+      .eq('lady_id', ladyId)
+      .eq('status', 'pending');
+    if (error) throw error;
+  },
+
+  async ladyLeaveClub(clubId: string, ladyId: string): Promise<void> {
+    const { error } = await supabase
+      .from('club_ladies')
+      .update({ status: 'left', left_at: new Date().toISOString() })
+      .eq('club_id', clubId)
+      .eq('lady_id', ladyId)
+      .neq('status', 'pending');
+    if (error) throw error;
+  },
 }; 

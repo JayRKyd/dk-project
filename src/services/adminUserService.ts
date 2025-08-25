@@ -11,6 +11,8 @@ export interface UserWithProfile {
   client_number?: string | null;
   created_at: string;
   last_login?: string;
+  profile_id?: string; // For ladies and clubs
+  club_id?: string; // For clubs only
   profile?: {
     name: string;
     location: string;
@@ -38,9 +40,13 @@ export const adminUserService = {
           created_at,
           last_login,
           profiles (
+            id,
             name,
             location,
             image_url
+          ),
+          clubs (
+            id
           )
         `)
         .order('created_at', { ascending: false });
@@ -61,6 +67,8 @@ export const adminUserService = {
         client_number: user.client_number || null,
         created_at: user.created_at,
         last_login: user.last_login,
+        profile_id: user.profiles?.[0]?.id,
+        club_id: user.clubs?.[0]?.id,
         profile: user.profiles?.[0] ? {
           name: user.profiles[0].name,
           location: user.profiles[0].location,
@@ -95,9 +103,13 @@ export const adminUserService = {
           created_at,
           last_login,
           profiles (
+            id,
             name,
             location,
             image_url
+          ),
+          clubs (
+            id
           )
         `, { count: 'exact' })
         .order('created_at', { ascending: false })
@@ -128,6 +140,8 @@ export const adminUserService = {
         client_number: user.client_number || null,
         created_at: user.created_at,
         last_login: user.last_login,
+        profile_id: user.profiles?.[0]?.id,
+        club_id: user.clubs?.[0]?.id,
         profile: user.profiles?.[0] ? {
           name: user.profiles[0].name,
           location: user.profiles[0].location,

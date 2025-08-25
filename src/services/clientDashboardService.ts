@@ -355,7 +355,6 @@ export const clientDashboardService = {
     rating: number;
     positives: string[];
     negatives: string[];
-    isAnonymous?: boolean;
   }): Promise<Review> {
     try {
       // 1. Get current user
@@ -375,18 +374,7 @@ export const clientDashboardService = {
         throw new Error('Lady profile not found. Please try again.');
       }
 
-      // 3. Check if user has completed a booking with this lady (experienced community rule)
-      const { data: completedBookings } = await supabase
-        .from('bookings')
-        .select('id')
-        .eq('client_id', user.id)
-        .eq('profile_id', ladyProfile.id)
-        .eq('status', 'completed')
-        .limit(1);
-
-      if (!completedBookings || completedBookings.length === 0) {
-        throw new Error('You can only review ladies you have booked with. This helps maintain our experienced community standards.');
-      }
+      // 3. Booking validation removed - clients can now review any lady
 
       // 4. Check if user already reviewed this lady
       const { data: existingReview } = await supabase
@@ -439,8 +427,7 @@ export const clientDashboardService = {
             metadata: {
               rating: reviewData.rating,
               positives_count: reviewData.positives.filter(p => p.trim()).length,
-              negatives_count: reviewData.negatives.filter(n => n.trim()).length,
-              is_anonymous: reviewData.isAnonymous || false
+              negatives_count: reviewData.negatives.filter(n => n.trim()).length
             }
           });
       } catch (activityError) {
@@ -491,7 +478,6 @@ export const clientDashboardService = {
     rating: number;
     positives: string[];
     negatives: string[];
-    isAnonymous?: boolean;
   }): Promise<Review> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('You must be logged in to submit a review.');

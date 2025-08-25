@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { AdminGuard } from '../../components/admin/AdminGuard';
 import { adminUserService, type UserWithProfile } from '../../services/adminUserService';
-import { Search, Shield, UserX, Unlock, Ban, Mail, Calendar, UserCircle2 } from 'lucide-react';
+import { Search, Shield, UserX, Unlock, Ban, Mail, Calendar, UserCircle2, Eye, ExternalLink } from 'lucide-react';
 
 const PAGE_SIZE = 25;
 
@@ -13,6 +14,8 @@ const UserManagement: React.FC = () => {
   const [search, setSearch] = useState<string>('');
   const [page, setPage] = useState<number>(1);
   const [total, setTotal] = useState<number>(0);
+  const [selectedClient, setSelectedClient] = useState<UserWithProfile | null>(null);
+  const [showClientDetails, setShowClientDetails] = useState<boolean>(false);
 
   // Load users (paged + search)
   useEffect(() => {
@@ -42,6 +45,30 @@ const UserManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getProfileUrl = (user: UserWithProfile): string | null => {
+    if (user.role === 'lady' && user.profile_id) {
+      // FREE ladies: /ladies/:profileId, PRO ladies: /ladies/pro/:profileId
+      return `/${user.membership_tier === 'FREE' ? 'ladies' : 'ladies/pro'}/${user.profile_id}`;
+    } else if (user.role === 'club' && user.club_id) {
+      return `/clubs/${user.club_id}`;
+    }
+    return null;
+  };
+
+  const handleUserClick = (user: UserWithProfile) => {
+    if (user.role === 'client') {
+      // Show details drawer for clients
+      setSelectedClient(user);
+      setShowClientDetails(true);
+    }
+    // For ladies and clubs, the Link component handles navigation
+  };
+
+  const closeClientDetails = () => {
+    setShowClientDetails(false);
+    setSelectedClient(null);
   };
 
   return (
@@ -91,15 +118,57 @@ const UserManagement: React.FC = () => {
                   <tr key={user.id} className="border-t">
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
-                        {user.profile?.image_url ? (
-                          <img src={user.profile.image_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+                        {getProfileUrl(user) ? (
+                          <Link
+                            to={getProfileUrl(user)!}
+                            className="flex items-center gap-3 hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors group"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {user.profile?.image_url ? (
+                              <img src={user.profile.image_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+                            ) : (
+                              <UserCircle2 className="h-8 w-8 text-gray-400" />
+                            )}
+                            <div>
+                              <div className="font-medium flex items-center gap-1">
+                                {user.username || '—'}
+                                <ExternalLink className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </div>
+                              <div className="text-xs text-gray-500 flex items-center gap-1"><Mail className="h-3 w-3" /> {user.email}</div>
+                            </div>
+                          </Link>
+                        ) : user.role === 'client' ? (
+                          <button
+                            onClick={() => handleUserClick(user)}
+                            className="flex items-center gap-3 hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors group text-left w-full"
+                          >
+                            {user.profile?.image_url ? (
+                              <img src={user.profile.image_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+                            ) : (
+                              <UserCircle2 className="h-8 w-8 text-gray-400" />
+                            )}
+                            <div>
+                              <div className="font-medium flex items-center gap-1">
+                                {user.username || '—'}
+                                <Eye className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </div>
+                              <div className="text-xs text-gray-500 flex items-center gap-1"><Mail className="h-3 w-3" /> {user.email}</div>
+                            </div>
+                          </button>
                         ) : (
-                          <UserCircle2 className="h-8 w-8 text-gray-400" />
+                          <div className="flex items-center gap-3">
+                            {user.profile?.image_url ? (
+                              <img src={user.profile.image_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+                            ) : (
+                              <UserCircle2 className="h-8 w-8 text-gray-400" />
+                            )}
+                            <div>
+                              <div className="font-medium">{user.username || '—'}</div>
+                              <div className="text-xs text-gray-500 flex items-center gap-1"><Mail className="h-3 w-3" /> {user.email}</div>
+                            </div>
+                          </div>
                         )}
-                        <div>
-                          <div className="font-medium">{user.username || '—'}</div>
-                          <div className="text-xs text-gray-500 flex items-center gap-1"><Mail className="h-3 w-3" /> {user.email}</div>
-                        </div>
                       </div>
                     </td>
                     <td className="py-3 px-4 capitalize">{user.role}</td>
@@ -153,6 +222,117 @@ const UserManagement: React.FC = () => {
               Next
             </button>
           </div>
+
+          {/* Client Details Drawer */}
+          {showClientDetails && selectedClient && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900">Client Details</h3>
+                    <button
+                      onClick={closeClientDetails}
+                      className="text-gray-400 hover:text-gray-600 p-1"
+                    >
+                      <span className="text-2xl">&times;</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Avatar and Basic Info */}
+                    <div className="flex items-center gap-4">
+                      {selectedClient.profile?.image_url ? (
+                        <img src={selectedClient.profile.image_url} alt="" className="h-16 w-16 rounded-full object-cover" />
+                      ) : (
+                        <UserCircle2 className="h-16 w-16 text-gray-400" />
+                      )}
+                      <div>
+                        <h4 className="text-xl font-semibold text-gray-900">{selectedClient.username || '—'}</h4>
+                        <p className="text-gray-600">{selectedClient.email}</p>
+                        <p className="text-sm text-gray-500">Client #{selectedClient.client_number || '—'}</p>
+                      </div>
+                    </div>
+
+                    {/* Status and Tier */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Membership</label>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {selectedClient.membership_tier || 'FREE'}
+                        </span>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Verification</label>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          selectedClient.is_verified
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {selectedClient.is_verified ? 'Verified' : 'Pending'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Account Status */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
+                      <div className="flex items-center gap-2">
+                        {selectedClient.is_blocked ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <Ban className="h-3 w-3 mr-1" />
+                            Suspended
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Profile Info */}
+                    {selectedClient.profile && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Profile Info</label>
+                        <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                          {selectedClient.profile.name && (
+                            <p><span className="font-medium">Name:</span> {selectedClient.profile.name}</p>
+                          )}
+                          {selectedClient.profile.location && (
+                            <p><span className="font-medium">Location:</span> {selectedClient.profile.location}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Account Dates */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Joined</label>
+                        <p className="text-sm text-gray-600">{format(new Date(selectedClient.created_at), 'PP')}</p>
+                      </div>
+                      {selectedClient.last_login && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Last Login</label>
+                          <p className="text-sm text-gray-600">{format(new Date(selectedClient.last_login), 'PP')}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Button */}
+                    <div className="pt-4 border-t">
+                      <button
+                        onClick={closeClientDetails}
+                        className="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </AdminLayout>
     </AdminGuard>

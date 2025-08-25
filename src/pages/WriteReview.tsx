@@ -19,7 +19,6 @@ export default function WriteReview() {
     rating: 0,
     positives: [''],
     negatives: [''],
-    anonymous: false,
   });
   
   const [submitting, setSubmitting] = useState(false);
@@ -86,16 +85,14 @@ export default function WriteReview() {
           clubId: targetId,
           rating: formData.rating,
           positives: validPositives,
-          negatives: formData.negatives.filter(n => n.trim()),
-          isAnonymous: formData.anonymous
+          negatives: formData.negatives.filter(n => n.trim())
         });
       } else {
         await clientDashboardService.submitReview({
           ladyId: targetId,
           rating: formData.rating,
           positives: validPositives,
-          negatives: formData.negatives.filter(n => n.trim()),
-          isAnonymous: formData.anonymous
+          negatives: formData.negatives.filter(n => n.trim())
         });
       }
       
@@ -311,19 +308,7 @@ export default function WriteReview() {
             </div>
           </div>
 
-          {/* Anonymous Option */}
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="anonymous"
-              checked={formData.anonymous}
-              onChange={(e) => setFormData(prev => ({ ...prev, anonymous: e.target.checked }))}
-              className="rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-            />
-            <label htmlFor="anonymous" className="text-sm text-gray-600">
-              Post anonymously
-            </label>
-          </div>
+
 
           {/* Submit Buttons */}
           <div className="flex items-center justify-end gap-4 pt-4">

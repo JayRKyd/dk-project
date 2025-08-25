@@ -16,6 +16,11 @@ export interface VerificationQueueItem {
   priority_score?: number;
   profile_image?: string;
   verification_status?: string;
+  // Business contact information (for clubs)
+  business_name?: string;
+  business_phone?: string;
+  business_website?: string;
+  business_type?: string;
 }
 
 interface BaseVerificationDocument {
@@ -141,7 +146,15 @@ export const getVerificationQueue = async (): Promise<VerificationQueueItem[]> =
     // Get queue items with additional validation
     const { data, error } = await supabase
       .from('verification_queue')
-      .select('*')
+      .select(`
+        *,
+        users!verification_queue_id_fkey (
+          business_name,
+          business_phone,
+          business_website,
+          business_type
+        )
+      `)
       .not('id', 'is', null)  // Ensure ID is not null
       .not('username', 'is', null)  // Ensure username is not null
       .not('email', 'is', null)  // Ensure email is not null
@@ -158,15 +171,15 @@ export const getVerificationQueue = async (): Promise<VerificationQueueItem[]> =
       return [];
     }
 
-    // Validate each item has required fields
+    // Validate each item has required fields and merge business info
     const validatedData = data.filter(item => {
       // Check if item has valid ID (UUID format)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       const isValidId = item.id && typeof item.id === 'string' && uuidRegex.test(item.id);
-      
+
       // Check if item has required fields
       const hasRequiredFields = item.username && item.email && item.role;
-      
+
       if (!isValidId || !hasRequiredFields) {
         console.warn('Filtering out invalid verification queue item:', {
           id: item.id,
@@ -178,9 +191,15 @@ export const getVerificationQueue = async (): Promise<VerificationQueueItem[]> =
         });
         return false;
       }
-      
+
       return true;
-    });
+    }).map(item => ({
+      ...item,
+      business_name: item.users?.business_name || undefined,
+      business_phone: item.users?.business_phone || undefined,
+      business_website: item.users?.business_website || undefined,
+      business_type: item.users?.business_type || undefined,
+    }));
 
     return validatedData;
   } catch (error) {
