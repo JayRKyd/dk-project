@@ -143,22 +143,14 @@ const calculatePriority = (user: VerificationQueueItem): number => {
  */
 export const getVerificationQueue = async (): Promise<VerificationQueueItem[]> => {
   try {
-    // Get queue items with additional validation
+    // Fetch directly from the view without joins (view has no relational fkeys)
     const { data, error } = await supabase
       .from('verification_queue')
-      .select(`
-        *,
-        users!verification_queue_id_fkey (
-          business_name,
-          business_phone,
-          business_website,
-          business_type
-        )
-      `)
-      .not('id', 'is', null)  // Ensure ID is not null
-      .not('username', 'is', null)  // Ensure username is not null
-      .not('email', 'is', null)  // Ensure email is not null
-      .in('role', ['lady', 'club', 'client'])  // Only valid roles
+      .select('*')
+      .not('id', 'is', null)
+      .not('username', 'is', null)
+      .not('email', 'is', null)
+      .in('role', ['lady', 'club', 'client'])
       .order('verification_submitted_at', { ascending: true });
 
     if (error) {
@@ -171,7 +163,7 @@ export const getVerificationQueue = async (): Promise<VerificationQueueItem[]> =
       return [];
     }
 
-    // Validate each item has required fields and merge business info
+    // Validate each item has required fields
     const validatedData = data.filter(item => {
       // Check if item has valid ID (UUID format)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

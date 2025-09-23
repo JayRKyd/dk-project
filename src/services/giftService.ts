@@ -16,6 +16,7 @@ export interface GiftWithReplies {
     name: string;
     imageUrl: string;
   };
+  recipientProfileId?: string;
   type: {
     name: string;
     emoji: string;
@@ -259,14 +260,14 @@ export const giftService = {
 
       // Fetch recipient profiles in batch (needed for name/image)
       const recipientIds = Array.from(new Set((gifts || []).map(g => g.recipient_id).filter(Boolean)));
-      let recipientProfileMap = new Map<string, { name: string; image_url?: string }>();
+      let recipientProfileMap = new Map<string, { name: string; image_url?: string; profile_id?: string }>();
       if (recipientIds.length > 0) {
         const { data: profileRows } = await supabase
           .from('profiles')
-          .select('user_id, name, image_url')
+          .select('id, user_id, name, image_url')
           .in('user_id', recipientIds as string[]);
         (profileRows || []).forEach((p: any) => {
-          recipientProfileMap.set(p.user_id, { name: p.name, image_url: p.image_url });
+          recipientProfileMap.set(p.user_id, { name: p.name, image_url: p.image_url, profile_id: p.id });
         });
       }
 
@@ -281,6 +282,7 @@ export const giftService = {
               name: recipientProfileMap.get(gift.recipient_id)?.name || 'Unknown',
               imageUrl: recipientProfileMap.get(gift.recipient_id)?.image_url || ''
             },
+            recipientProfileId: recipientProfileMap.get(gift.recipient_id)?.profile_id,
             type: {
               name: gift.gift_type,
               emoji: this.getGiftEmoji(gift.gift_type),

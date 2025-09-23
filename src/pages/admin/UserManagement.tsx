@@ -5,6 +5,7 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { AdminGuard } from '../../components/admin/AdminGuard';
 import { adminUserService, type UserWithProfile } from '../../services/adminUserService';
 import { Search, Shield, UserX, Unlock, Ban, Mail, Calendar, UserCircle2, Eye, ExternalLink } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 const PAGE_SIZE = 25;
 
@@ -14,8 +15,9 @@ const UserManagement: React.FC = () => {
   const [search, setSearch] = useState<string>('');
   const [page, setPage] = useState<number>(1);
   const [total, setTotal] = useState<number>(0);
-  const [selectedClient, setSelectedClient] = useState<UserWithProfile | null>(null);
-  const [showClientDetails, setShowClientDetails] = useState<boolean>(false);
+  const [selectedUser, setSelectedUser] = useState<UserWithProfile | null>(null);
+  const [showDetails, setShowDetails] = useState<boolean>(false);
+  const [profileUrl, setProfileUrl] = useState<string | null>(null);
 
   // Load users (paged + search)
   useEffect(() => {
@@ -58,17 +60,15 @@ const UserManagement: React.FC = () => {
   };
 
   const handleUserClick = (user: UserWithProfile) => {
-    if (user.role === 'client') {
-      // Show details drawer for clients
-      setSelectedClient(user);
-      setShowClientDetails(true);
-    }
-    // For ladies and clubs, the Link component handles navigation
+    // Open read-only details drawer for any user role
+    setSelectedUser(user);
+    setShowDetails(true);
   };
 
-  const closeClientDetails = () => {
-    setShowClientDetails(false);
-    setSelectedClient(null);
+  const closeDetails = () => {
+    setShowDetails(false);
+    setSelectedUser(null);
+    setProfileUrl(null);
   };
 
   return (
@@ -138,7 +138,7 @@ const UserManagement: React.FC = () => {
                               <div className="text-xs text-gray-500 flex items-center gap-1"><Mail className="h-3 w-3" /> {user.email}</div>
                             </div>
                           </Link>
-                        ) : user.role === 'client' ? (
+                        ) : (
                           <button
                             onClick={() => handleUserClick(user)}
                             className="flex items-center gap-3 hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors group text-left w-full"
@@ -149,25 +149,10 @@ const UserManagement: React.FC = () => {
                               <UserCircle2 className="h-8 w-8 text-gray-400" />
                             )}
                             <div>
-                              <div className="font-medium flex items-center gap-1">
-                                {user.username || '—'}
-                                <Eye className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                              </div>
+                              <div className="font-medium flex items-center gap-1">{user.username || '—'}</div>
                               <div className="text-xs text-gray-500 flex items-center gap-1"><Mail className="h-3 w-3" /> {user.email}</div>
                             </div>
                           </button>
-                        ) : (
-                          <div className="flex items-center gap-3">
-                            {user.profile?.image_url ? (
-                              <img src={user.profile.image_url} alt="" className="h-8 w-8 rounded-full object-cover" />
-                            ) : (
-                              <UserCircle2 className="h-8 w-8 text-gray-400" />
-                            )}
-                            <div>
-                              <div className="font-medium">{user.username || '—'}</div>
-                              <div className="text-xs text-gray-500 flex items-center gap-1"><Mail className="h-3 w-3" /> {user.email}</div>
-                            </div>
-                          </div>
                         )}
                       </div>
                     </td>
@@ -189,6 +174,13 @@ const UserManagement: React.FC = () => {
                     <td className="py-3 px-4 text-sm text-gray-600 flex items-center gap-1"><Calendar className="h-4 w-4" /> {format(new Date(user.created_at), 'PP')}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleUserClick(user)}
+                          className="p-2 rounded-lg border text-gray-600 hover:bg-gray-50 border-gray-200"
+                          title="View details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
                         <button
                           onClick={() => handleBlockToggle(user)}
                           className={`p-2 rounded-lg border transition-colors ${user.is_blocked ? 'text-green-600 hover:bg-green-50 border-green-200' : 'text-red-600 hover:bg-red-50 border-red-200'}`}
@@ -223,15 +215,53 @@ const UserManagement: React.FC = () => {
             </button>
           </div>
 
-          {/* Client Details Drawer */}
-          {showClientDetails && selectedClient && (
+          {/* Details Drawer (read-only) */}
+          {showDetails && selectedUser && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
                 <div className="p-6">
+                  {/* Resolve profile URL when modal opens */}
+                  {/* eslint-disable-next-line react-hooks/rules-of-hooks */}
+                  {(() => {
+                    // Compute once per open
+                    if (profileUrl === null) {
+                      const direct = getProfileUrl(selectedUser);
+                      if (direct) {
+                        setProfileUrl(direct);
+                      } else {
+                        (async () => {
+                          try {
+                            if (selectedUser.role === 'lady') {
+                              const { data } = await supabase
+                                .from('profiles')
+                                .select('id')
+                                .eq('user_id', selectedUser.id)
+                                .maybeSingle();
+                              if (data?.id) {
+                                setProfileUrl(`/${selectedUser.membership_tier === 'FREE' ? 'ladies' : 'ladies/pro'}/${data.id}`);
+                              }
+                            } else if (selectedUser.role === 'club') {
+                              const { data } = await supabase
+                                .from('clubs')
+                                .select('id')
+                                .eq('user_id', selectedUser.id)
+                                .maybeSingle();
+                              if (data?.id) {
+                                setProfileUrl(`/clubs/${data.id}`);
+                              }
+                            }
+                          } catch (_) {
+                            // ignore
+                          }
+                        })();
+                      }
+                    }
+                    return null;
+                  })()}
                   <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900">Client Details</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">User Details</h3>
                     <button
-                      onClick={closeClientDetails}
+                      onClick={closeDetails}
                       className="text-gray-400 hover:text-gray-600 p-1"
                     >
                       <span className="text-2xl">&times;</span>
@@ -241,15 +271,20 @@ const UserManagement: React.FC = () => {
                   <div className="space-y-4">
                     {/* Avatar and Basic Info */}
                     <div className="flex items-center gap-4">
-                      {selectedClient.profile?.image_url ? (
-                        <img src={selectedClient.profile.image_url} alt="" className="h-16 w-16 rounded-full object-cover" />
+                      {selectedUser.profile?.image_url ? (
+                        <img src={selectedUser.profile.image_url} alt="" className="h-16 w-16 rounded-full object-cover" />
                       ) : (
                         <UserCircle2 className="h-16 w-16 text-gray-400" />
                       )}
                       <div>
-                        <h4 className="text-xl font-semibold text-gray-900">{selectedClient.username || '—'}</h4>
-                        <p className="text-gray-600">{selectedClient.email}</p>
-                        <p className="text-sm text-gray-500">Client #{selectedClient.client_number || '—'}</p>
+                        <h4 className="text-xl font-semibold text-gray-900">{selectedUser.username || '—'}</h4>
+                        <p className="text-gray-600">{selectedUser.email}</p>
+                        {selectedUser.role === 'client' && (
+                          <p className="text-sm text-gray-500">Client #{selectedUser.client_number || '—'}</p>
+                        )}
+                        {selectedUser.role !== 'client' && (
+                          <p className="text-sm text-gray-500 capitalize">{selectedUser.role}</p>
+                        )}
                       </div>
                     </div>
 
@@ -258,17 +293,17 @@ const UserManagement: React.FC = () => {
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Membership</label>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {selectedClient.membership_tier || 'FREE'}
+                          {selectedUser.membership_tier || 'FREE'}
                         </span>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Verification</label>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          selectedClient.is_verified
+                          selectedUser.is_verified
                             ? 'bg-green-100 text-green-800'
                             : 'bg-yellow-100 text-yellow-800'
                         }`}>
-                          {selectedClient.is_verified ? 'Verified' : 'Pending'}
+                          {selectedUser.is_verified ? 'Verified' : 'Pending'}
                         </span>
                       </div>
                     </div>
@@ -277,7 +312,7 @@ const UserManagement: React.FC = () => {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
                       <div className="flex items-center gap-2">
-                        {selectedClient.is_blocked ? (
+                        {selectedUser.is_blocked ? (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                             <Ban className="h-3 w-3 mr-1" />
                             Suspended
@@ -291,15 +326,15 @@ const UserManagement: React.FC = () => {
                     </div>
 
                     {/* Profile Info */}
-                    {selectedClient.profile && (
+                    {selectedUser.profile && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Profile Info</label>
                         <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                          {selectedClient.profile.name && (
-                            <p><span className="font-medium">Name:</span> {selectedClient.profile.name}</p>
+                          {selectedUser.profile.name && (
+                            <p><span className="font-medium">Name:</span> {selectedUser.profile.name}</p>
                           )}
-                          {selectedClient.profile.location && (
-                            <p><span className="font-medium">Location:</span> {selectedClient.profile.location}</p>
+                          {selectedUser.profile.location && (
+                            <p><span className="font-medium">Location:</span> {selectedUser.profile.location}</p>
                           )}
                         </div>
                       </div>
@@ -309,20 +344,37 @@ const UserManagement: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Joined</label>
-                        <p className="text-sm text-gray-600">{format(new Date(selectedClient.created_at), 'PP')}</p>
+                        <p className="text-sm text-gray-600">{format(new Date(selectedUser.created_at), 'PP')}</p>
                       </div>
-                      {selectedClient.last_login && (
+                      {selectedUser.last_login && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Last Login</label>
-                          <p className="text-sm text-gray-600">{format(new Date(selectedClient.last_login), 'PP')}</p>
+                          <p className="text-sm text-gray-600">{format(new Date(selectedUser.last_login), 'PP')}</p>
                         </div>
                       )}
+                    </div>
+
+                    {/* Quick Links */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Quick Links</label>
+                      <div className="flex flex-wrap gap-2">
+                        {profileUrl && (
+                          <Link
+                            to={profileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 bg-pink-50 text-pink-600 rounded-lg text-sm hover:bg-pink-100"
+                          >
+                            Open profile
+                          </Link>
+                        )}
+                      </div>
                     </div>
 
                     {/* Action Button */}
                     <div className="pt-4 border-t">
                       <button
-                        onClick={closeClientDetails}
+                        onClick={closeDetails}
                         className="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
                       >
                         Close
@@ -339,4 +391,4 @@ const UserManagement: React.FC = () => {
   );
 };
 
-export default UserManagement; 
+export default UserManagement;

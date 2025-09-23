@@ -212,18 +212,40 @@ export const clubService = {
 
   // Get club ladies
   async getClubLadies(clubId: string): Promise<ClubLady[]> {
-    const { data, error } = await supabase
+    // Fetch mappings first
+    const { data: mappings, error: mapErr } = await supabase
       .from('club_ladies')
-      .select(`
-        *,
-        lady:users!lady_id(*),
-        profile:profiles!lady_id(*)
-      `)
+      .select('*')
       .eq('club_id', clubId)
       .order('join_date', { ascending: false });
-    
-    if (error) throw error;
-    return data || [];
+    if (mapErr) throw mapErr;
+
+    if (!mappings || mappings.length === 0) return [];
+
+    const ladyIds = Array.from(new Set(mappings.map(m => m.lady_id))).filter(Boolean) as string[];
+
+    // Fetch users
+    const { data: users, error: usersErr } = await supabase
+      .from('users')
+      .select('id, username, email')
+      .in('id', ladyIds);
+    if (usersErr) throw usersErr;
+
+    // Fetch profiles by user_id
+    const { data: profiles, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, user_id, name, image_url')
+      .in('user_id', ladyIds);
+    if (profErr) throw profErr;
+
+    const userById = new Map(users?.map(u => [u.id, u]) || []);
+    const profileByUserId = new Map(profiles?.map(p => [p.user_id, p]) || []);
+
+    return mappings.map(m => ({
+      ...m,
+      lady: userById.get(m.lady_id) || undefined,
+      profile: profileByUserId.get(m.lady_id) || undefined,
+    }));
   },
 
   // Get club bookings
@@ -248,23 +270,53 @@ export const clubService = {
   async getUpcomingBookings(clubId: string, limit = 5): Promise<ClubBooking[]> {
     const today = new Date().toISOString().split('T')[0];
     
-    const { data, error } = await supabase
+    // Step 1: get club booking rows
+    const { data: rows, error: rowsErr } = await supabase
       .from('club_bookings')
-      .select(`
-        *,
-        booking:bookings!booking_id(
-          *,
-          client:users!client_id(*),
-          provider:profiles!provider_id(*)
-        )
-      `)
+      .select('*')
       .eq('club_id', clubId)
-      .gte('booking.date', today)
-      .order('booking.date', { ascending: true })
+      .order('created_at', { ascending: true })
       .limit(limit);
-    
-    if (error) throw error;
-    return data || [];
+    if (rowsErr) throw rowsErr;
+
+    if (!rows || rows.length === 0) return [];
+
+    const bookingIds = Array.from(new Set(rows.map(r => r.booking_id))).filter(Boolean) as string[];
+    const userIds = Array.from(new Set([...(rows.map(r => (r as any).client_id)), ...(rows.map(r => (r as any).lady_id))])).filter(Boolean) as string[];
+
+    // Step 2: fetch bookings
+    const { data: bookings, error: bkErr } = await supabase
+      .from('bookings')
+      .select('*')
+      .in('id', bookingIds);
+    if (bkErr) throw bkErr;
+
+    // Step 3: fetch users referenced
+    const { data: users, error: usersErr } = await supabase
+      .from('users')
+      .select('id, username')
+      .in('id', userIds);
+    if (usersErr) throw usersErr;
+
+    const bookingById = new Map(bookings?.map(b => [b.id, b]) || []);
+    const userById = new Map(users?.map(u => [u.id, u]) || []);
+
+    // Optionally filter bookings in memory if bookings have a 'date' column
+    const todayStr = new Date().toISOString().split('T')[0];
+    const enriched = rows.map(r => ({
+      ...r,
+      booking: bookingById.get(r.booking_id) || undefined,
+      client: userById.get((r as any).client_id) || undefined,
+      lady: userById.get((r as any).lady_id) || undefined,
+    }));
+
+    // Filter to upcoming if booking has a 'date' field
+    const upcoming = enriched.filter((row: any) => {
+      const d = row?.booking?.date as string | undefined;
+      return !d || d >= todayStr;
+    });
+
+    return upcoming;
   },
 
   // Get recent activity
@@ -366,11 +418,7 @@ export const clubService = {
         status: 'pending',
         join_date: new Date().toISOString()
       })
-      .select(`
-        *,
-        lady:users!lady_id(*),
-        profile:profiles!lady_id(*)
-      `)
+      .select('*')
       .single();
 
     if (error) {

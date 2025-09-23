@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, MapPin, X, Check } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -236,7 +236,7 @@ export default function ClientBookings() {
                   />
                   <div>
                     <Link
-                      to={`/ladies/pro/${booking.lady.name.toLowerCase()}`}
+                      to={`/ladies/pro/${booking.lady.id}`}
                       className="font-medium text-gray-900 hover:text-pink-500"
                     >
                       {booking.lady.name}
@@ -321,13 +321,13 @@ export default function ClientBookings() {
               {booking.status === 'completed' && (
                 <div className="mt-6 flex gap-4">
                   <Link
-                    to={`/write-review/${booking.lady.name.toLowerCase()}`}
+                    to={`/write-review/${booking.lady.id}`}
                     className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
                   >
                     Write Review
                   </Link>
                   <Link
-                    to={`/send-gift/${booking.lady.name}`}
+                    to={`/send-gift/${booking.lady.id}`}
                     className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
                   >
                     Send Gift

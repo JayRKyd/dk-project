@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Heart, Star, MapPin, X, Loader2, AlertCircle, Trash2 } from 'lucide-react';
+import { ArrowLeft, Heart, Star, MapPin, X, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { clientDashboardService, Profile } from '../../services/clientDashboardService';
 
@@ -149,7 +149,7 @@ export default function ClientFavorites() {
             <div key={favorite.id} className="relative group bg-white rounded-xl border border-pink-300 overflow-hidden hover:shadow-lg transition-shadow">
               {/* Profile Card Content */}
               <Link 
-                to={`/ladies/${favorite.membershipTier === 'FREE' ? '' : 'pro/'}${favorite.name.toLowerCase()}`}
+                to={`/ladies/${favorite.membershipTier === 'FREE' ? '' : 'pro/'}${favorite.id}`}
                 className="block"
               >
                 <div className="aspect-w-3 aspect-h-4 relative">

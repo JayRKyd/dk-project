@@ -24,6 +24,7 @@ export interface ClientActivity {
 export interface Booking {
   id: string;
   lady: {
+    id: string;
     name: string;
     imageUrl: string;
   };
@@ -76,6 +77,7 @@ export interface Gift {
 export interface FanPost {
   id: string;
   lady: {
+    id: string;
     name: string;
     imageUrl: string;
   };
@@ -231,22 +233,26 @@ export const clientDashboardService = {
       throw error;
     }
 
-    return data?.map((booking: any) => ({
-      id: booking.id,
-      lady: {
-        name: booking.profiles?.name || 'Unknown',
-        imageUrl: booking.profiles?.image_url || '',
-      },
-      date: booking.date,
-      time: booking.time,
-      duration: booking.duration,
-      service: `${booking.duration / 60} hour${booking.duration > 60 ? 's' : ''}`,
-      price: `€${booking.total_cost}`,
-      location: booking.location_type as 'incall' | 'outcall',
-      address: booking.address,
-      status: booking.status as Booking['status'],
-      createdAt: booking.created_at,
-    })) || [];
+    return data?.map((booking: any) => {
+      const ladyId: string = booking.profiles?.id || '';
+      return {
+        id: booking.id,
+        lady: {
+          id: ladyId,
+          name: booking.profiles?.name || 'Unknown',
+          imageUrl: booking.profiles?.image_url || '',
+        },
+        date: booking.date,
+        time: booking.time,
+        duration: booking.duration,
+        service: `${booking.duration / 60} hour${booking.duration > 60 ? 's' : ''}`,
+        price: `€${booking.total_cost}`,
+        location: booking.location_type as 'incall' | 'outcall',
+        address: booking.address,
+        status: booking.status as Booking['status'],
+        createdAt: booking.created_at,
+      } as Booking;
+    }) || [];
   },
 
   /**
@@ -279,22 +285,26 @@ export const clientDashboardService = {
       throw error;
     }
 
-    return data?.map((booking: any) => ({
-      id: booking.id,
-      lady: {
-        name: booking.profiles?.name || 'Unknown',
-        imageUrl: booking.profiles?.image_url || '',
-      },
-      date: booking.date,
-      time: booking.time,
-      duration: booking.duration,
-      service: `${booking.duration / 60} hour${booking.duration > 60 ? 's' : ''}`,
-      price: `€${booking.total_cost}`,
-      location: booking.location_type as 'incall' | 'outcall',
-      address: booking.address,
-      status: booking.status as Booking['status'],
-      createdAt: booking.created_at,
-    })) || [];
+    return data?.map((booking: any) => {
+      const ladyId: string = booking.profiles?.id || '';
+      return {
+        id: booking.id,
+        lady: {
+          id: ladyId,
+          name: booking.profiles?.name || 'Unknown',
+          imageUrl: booking.profiles?.image_url || '',
+        },
+        date: booking.date,
+        time: booking.time,
+        duration: booking.duration,
+        service: `${booking.duration / 60} hour${booking.duration > 60 ? 's' : ''}`,
+        price: `€${booking.total_cost}`,
+        location: booking.location_type as 'incall' | 'outcall',
+        address: booking.address,
+        status: booking.status as Booking['status'],
+        createdAt: booking.created_at,
+      } as Booking;
+    }) || [];
   },
 
   /**
@@ -1028,7 +1038,7 @@ export const clientDashboardService = {
     const ladyIds = [...new Set(data.map((unlock: any) => unlock.fan_posts.lady_id))];
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('user_id, name, image_url')
+      .select('id, user_id, name, image_url')
       .in('user_id', ladyIds);
 
     if (profileError) {
@@ -1049,6 +1059,7 @@ export const clientDashboardService = {
       return {
         id: fanPost.id,
         lady: {
+          id: profile?.id || '',
           name: profile?.name || 'Unknown',
           imageUrl: profile?.image_url || '',
         },
@@ -1349,6 +1360,71 @@ export const clientDashboardService = {
   },
 
   /**
+   * Send a gift to a recipient by profile ID (preferred, stable deep link).
+   */
+  async sendGiftToProfile(
+    senderId: string,
+    recipientProfileId: string,
+    giftTypes: Array<{ type: string; credits: number }>,
+    message?: string
+  ): Promise<void> {
+    try {
+      // Resolve recipient user_id from profile
+      const { data: recipientProfile, error: recipientErr } = await supabase
+        .from('profiles')
+        .select('id, user_id, name')
+        .eq('id', recipientProfileId)
+        .single();
+
+      if (recipientErr || !recipientProfile) {
+        throw new Error('Recipient not found');
+      }
+
+      // Check sender credits
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('credits')
+        .eq('id', senderId)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('Unable to verify your account');
+      }
+
+      const totalCost = giftTypes.reduce((sum, gift) => sum + gift.credits, 0);
+      if (userData.credits < totalCost) {
+        throw new Error(`Insufficient credits. You need ${totalCost} credits but only have ${userData.credits}.`);
+      }
+
+      for (const gift of giftTypes) {
+        const { error: transactionError } = await supabase
+          .rpc('process_client_credit_transaction', {
+            user_id_param: senderId,
+            amount_param: -gift.credits,
+            type_param: 'gift',
+            description_param: `Sent ${gift.type} gift to ${recipientProfile.name}`,
+            reference_id_param: null
+          });
+        if (transactionError) throw new Error('Unable to process credit transaction');
+
+        const { error: giftError } = await supabase
+          .from('gifts')
+          .insert({
+            sender_id: senderId,
+            recipient_id: recipientProfile.user_id,
+            gift_type: gift.type,
+            credits_cost: gift.credits,
+            message: message || null
+          });
+        if (giftError) throw new Error('Unable to create gift record');
+      }
+    } catch (error) {
+      console.error('Error sending gift by profile ID:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Get user's current credit balance
    */
   async getUserCredits(userId: string): Promise<number> {
@@ -1390,6 +1466,24 @@ export const clientDashboardService = {
       return data;
     } catch (error) {
       console.error('Error getting recipient profile:', error);
+      return null;
+    }
+  },
+
+  /**
+   * Get recipient profile by profile ID (preferred).
+   */
+  async getRecipientProfileById(profileId: string): Promise<{ user_id: string; name: string; image_url?: string } | null> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('user_id, name, image_url')
+        .eq('id', profileId)
+        .single();
+      if (error || !data) return null;
+      return data;
+    } catch (error) {
+      console.error('Error getting recipient profile by id:', error);
       return null;
     }
   },
@@ -1458,6 +1552,50 @@ export const clientDashboardService = {
       }));
     } catch (error) {
       console.error('Error getting recent gifts received:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Get recent gifts received by recipient profile ID (preferred).
+   */
+  async getRecentGiftsReceivedById(recipientProfileId: string, limit: number = 20): Promise<Array<{
+    emoji: string;
+    sender: string;
+    time: string;
+  }>> {
+    try {
+      const { data: recipientProfile } = await supabase
+        .from('profiles')
+        .select('user_id')
+        .eq('id', recipientProfileId)
+        .single();
+      if (!recipientProfile) return [];
+
+      const { data: giftsData } = await supabase
+        .from('gifts')
+        .select('gift_type, credits_cost, created_at, sender_id')
+        .eq('recipient_id', recipientProfile.user_id)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (!giftsData || giftsData.length === 0) return [];
+
+      const senderIds = [...new Set(giftsData.map((g: any) => g.sender_id).filter(Boolean))];
+      if (senderIds.length === 0) return [];
+      const { data: senderData } = await supabase
+        .from('profiles')
+        .select('user_id, name')
+        .in('user_id', senderIds);
+      const senderMap = new Map<string, string>();
+      (senderData || []).forEach((s: any) => senderMap.set(s.user_id, s.name));
+
+      return giftsData.map((gift: any) => ({
+        emoji: (this as any).getGiftEmoji(gift.gift_type),
+        sender: senderMap.get(gift.sender_id) || 'Anonymous',
+        time: (this as any).formatRelativeTime(gift.created_at)
+      }));
+    } catch (error) {
+      console.error('Error fetching recent gifts by profile id:', error);
       return [];
     }
   },

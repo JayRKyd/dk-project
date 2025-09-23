@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useClubDashboard } from '../../hooks/useClubDashboard';
 import { supabase } from '../../lib/supabase';
+import { ladyService } from '../../services/ladyService';
 import { clubService } from '../../services/clubService';
 
 interface LadyForm {
@@ -118,7 +119,7 @@ export default function ClubLady() {
 	const [linkSearch, setLinkSearch] = useState('');
 	const [linkResult, setLinkResult] = useState<null | { id: string; email: string; username?: string }>(null);
 	const [linking, setLinking] = useState(false);
-	const [suggestions, setSuggestions] = useState<Array<{ id: string; email: string; username?: string }>>([]);
+	const [suggestions, setSuggestions] = useState<Array<{ id: string; email: string; username?: string; name?: string; imageUrl?: string; location?: string; rating?: number; age?: number; languages?: string[] }>>([]);
 	const [searchLoading, setSearchLoading] = useState(false);
 	const [searchDebounce, setSearchDebounce] = useState<number | undefined>(undefined);
 	const [findError, setFindError] = useState<string | null>(null);
@@ -193,14 +194,19 @@ export default function ClubLady() {
 		const handle = window.setTimeout(async () => {
 			setSearchLoading(true);
 			try {
-				const { data, error } = await supabase
-					.from('users')
-					.select('id, email, username, role')
-					.or(`email.ilike.%${linkSearch}%,username.ilike.%${linkSearch}%`)
-					.eq('role', 'lady')
-					.limit(10);
-				if (error) throw error;
-				const filtered = (data || []).filter(u => !existingLadyIds.has(u.id));
+				// Use unified search that includes name matches and merges disambiguators
+				const results = await ladyService.searchLadies(linkSearch, 10);
+				const filtered = results.filter(r => !existingLadyIds.has(r.userId)).map(r => ({
+					id: r.userId,
+					email: r.email || '',
+					username: r.username,
+					name: r.name,
+					imageUrl: r.imageUrl,
+					location: r.location,
+					rating: r.rating,
+					age: r.age,
+					languages: r.languages,
+				}));
 				setSuggestions(filtered);
 			} catch (err) {
 				// silent fail for suggestions
@@ -267,7 +273,7 @@ export default function ClubLady() {
 								{searchLoading && (
 									<div className="px-4 py-2 text-sm text-gray-500">Searching...</div>
 								)}
-								{suggestions.map(s => (
+				{suggestions.map(s => (
 									<button
 										key={s.id}
 										onClick={() => {
@@ -276,8 +282,27 @@ export default function ClubLady() {
 										}}
 										className="w-full text-left px-4 py-2 hover:bg-pink-50"
 									>
-										<div className="font-medium text-gray-900">{s.username || s.email}</div>
-										<div className="text-xs text-gray-600">{s.email}</div>
+						<div className="flex items-center gap-3">
+							{Boolean(s.imageUrl) ? (
+								<img src={s.imageUrl as string} alt={s.name || s.username || s.email} className="h-8 w-8 rounded-full object-cover" />
+							) : (
+								<div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-xs">
+									{(s.name || s.username || s.email || '?').charAt(0).toUpperCase()}
+								</div>
+							)}
+							<div>
+								<div className="font-medium text-gray-900">
+									{ s.name ? `${s.name} ${s.age ? `(${s.age})` : ''}` : (s.username || s.email) }
+								</div>
+								<div className="text-xs text-gray-600 flex flex-wrap items-center gap-2">
+									{ s.username && <span>@{s.username}</span> }
+									{ s.email && <span>{s.email}</span> }
+									{ s.location && <span>• {s.location}</span> }
+									{ typeof s.rating === 'number' && <span>• ★ {s.rating.toFixed(1)}</span> }
+									{ s.languages && s.languages.length > 0 && <span>• {s.languages.slice(0,3).join(', ')}{s.languages.length>3?'…':''}</span> }
+								</div>
+							</div>
+						</div>
 									</button>
 								))}
 								{!searchLoading && suggestions.length === 0 && (

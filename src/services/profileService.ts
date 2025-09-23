@@ -70,40 +70,7 @@ export interface OpeningHours {
 }
 
 export const profileService = {
-  async getLadyByName(name: string): Promise<ProfileData | null> {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(`
-          id,
-          name,
-          image_url,
-          rating,
-          loves,
-          description,
-          price,
-          location,
-          created_at,
-          updated_at
-        `)
-        .eq('name', name)
-        .eq('role', 'lady')
-        .single();
-
-      if (error) {
-        if (error.code === 'PGRST116') {
-          return null; // No profile found
-        }
-        throw error;
-      }
-
-      // Use the same logic as getProfileById
-      return this.getProfileById(data.id);
-    } catch (error) {
-      console.error('Error fetching lady profile:', error);
-      return null;
-    }
-  },
+  // Removed getLadyByName: names are non-unique; use ID or search service instead.
 
   async getProfileById(id: string): Promise<ProfileData | null> {
     try {
@@ -294,35 +261,23 @@ export const profileService = {
         return this.getProfileById(slug);
       }
 
-      // If not a UUID, try to find by name, then by username
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, name, image_url, rating, loves, description, price, location, created_at, updated_at')
-        .eq('name', slug)
+      // If not a UUID, attempt to resolve via users.username mapping
+      let resolvedProfile: any = null;
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', slug)
         .maybeSingle();
-
-      let resolvedProfile = profile;
-      if (!resolvedProfile) {
-        // Attempt to resolve via users.username mapping
-        const { data: userRow } = await supabase
-          .from('users')
-          .select('id')
-          .eq('username', slug)
+      if (userRow) {
+        const { data: profileByUser } = await supabase
+          .from('profiles')
+          .select('id, name, image_url, rating, loves, description, price, location, created_at, updated_at')
+          .eq('user_id', userRow.id)
           .maybeSingle();
-        if (userRow) {
-          const { data: profileByUser } = await supabase
-            .from('profiles')
-            .select('id, name, image_url, rating, loves, description, price, location, created_at, updated_at')
-            .eq('user_id', userRow.id)
-            .maybeSingle();
-          resolvedProfile = profileByUser || null;
-        }
+        resolvedProfile = profileByUser || null;
       }
 
-      if (profileError) {
-        console.error('Error fetching profile by slug:', profileError);
-        // continue to null handling
-      }
+      // No name path here; names are non-unique. Use search service for names.
 
       if (!resolvedProfile) {
         return null;

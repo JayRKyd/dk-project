@@ -150,7 +150,7 @@ export interface ProfileView {
   id: string;
   club_id: string;
   viewer_id?: string;
-  ip_address?: string;
+  viewer_ip?: string;
   user_agent?: string;
   referrer?: string;
   created_at: string;
@@ -187,7 +187,7 @@ export const analyticsService = {
       .insert({
         club_id: clubId,
         viewer_id: viewerId,
-        ip_address: ipAddress,
+        viewer_ip: ipAddress,
         user_agent: userAgent,
         referrer: referrer
       })
@@ -235,22 +235,22 @@ export const analyticsService = {
     // Get unique viewers (based on IP address for anonymous + user ID for logged in)
     const { data: uniqueViewsData } = await supabase
       .from('club_profile_views')
-      .select('viewer_id, ip_address')
+      .select('viewer_id, viewer_ip')
       .eq('club_id', clubId);
 
     const uniqueIdentifiers = new Set();
     uniqueViewsData?.forEach(view => {
       if (view.viewer_id) {
         uniqueIdentifiers.add(`user_${view.viewer_id}`);
-      } else if (view.ip_address) {
-        uniqueIdentifiers.add(`ip_${view.ip_address}`);
+      } else if ((view as any).viewer_ip) {
+        uniqueIdentifiers.add(`ip_${(view as any).viewer_ip}`);
       }
     });
 
     // Calculate returning viewers (simplified - viewers with more than 1 view)
     const viewerCounts = new Map();
     uniqueViewsData?.forEach(view => {
-      const identifier = view.viewer_id || view.ip_address;
+      const identifier = view.viewer_id || (view as any).viewer_ip;
       if (identifier) {
         viewerCounts.set(identifier, (viewerCounts.get(identifier) || 0) + 1);
       }

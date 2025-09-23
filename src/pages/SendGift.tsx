@@ -19,7 +19,7 @@ interface RecipientProfile {
 }
 
 export default function SendGift() {
-  const { name } = useParams();
+  const { name: idOrName } = useParams();
   const { user } = useAuth();
   const [selectedGifts, setSelectedGifts] = useState<string[]>([]);
   const [giftOptions, setGiftOptions] = useState<GiftOption[]>([]);
@@ -44,10 +44,10 @@ export default function SendGift() {
 
   // Load initial data
   useEffect(() => {
-    if (name && user?.id) {
+    if (idOrName && user?.id) {
       loadPageData();
     }
-  }, [name, user?.id]);
+  }, [idOrName, user?.id]);
 
   useEffect(() => {
     // Load gift types from DB
@@ -64,17 +64,22 @@ export default function SendGift() {
   }, []);
 
   const loadPageData = async () => {
-    if (!name || !user?.id) return;
+    if (!idOrName || !user?.id) return;
     
     try {
       setPageLoading(true);
       setError(null);
 
       // Load recipient profile, user credits, and recent gifts in parallel
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName);
       const [recipientData, credits, giftsData] = await Promise.all([
-        clientDashboardService.getRecipientProfile(name),
+        isUuid
+          ? clientDashboardService.getRecipientProfileById(idOrName)
+          : clientDashboardService.getRecipientProfile(idOrName),
         clientDashboardService.getUserCredits(user.id),
-        clientDashboardService.getRecentGiftsReceived(name, 20)
+        isUuid
+          ? clientDashboardService.getRecentGiftsReceivedById(idOrName, 20)
+          : clientDashboardService.getRecentGiftsReceived(idOrName, 20)
       ]);
 
       setRecipientProfile(recipientData);
@@ -82,7 +87,7 @@ export default function SendGift() {
       setRecentGifts(giftsData);
 
       if (!recipientData) {
-        setError(`Profile "${name}" not found. Please check the name and try again.`);
+        setError('Profile not found. Please check and try again.');
       }
     } catch (err) {
       console.error('Error loading page data:', err);
@@ -103,7 +108,7 @@ export default function SendGift() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!user?.id || !name || !recipientProfile) {
+    if (!user?.id || !idOrName || !recipientProfile) {
       setError('Missing required information. Please refresh and try again.');
       return;
     }
@@ -124,12 +129,22 @@ export default function SendGift() {
       });
 
       // Send the gifts
-      await clientDashboardService.sendGift(
-        user.id,
-        name,
-        giftTypesToSend,
-        message.trim() || undefined
-      );
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName);
+      if (isUuid) {
+        await clientDashboardService.sendGiftToProfile(
+          user.id,
+          idOrName,
+          giftTypesToSend,
+          message.trim() || undefined
+        );
+      } else {
+        await clientDashboardService.sendGift(
+          user.id,
+          idOrName,
+          giftTypesToSend,
+          message.trim() || undefined
+        );
+      }
 
       // Update user credits after successful send
       const newCredits = await clientDashboardService.getUserCredits(user.id);
@@ -198,14 +213,14 @@ export default function SendGift() {
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Gift Sent!</h2>
           <p className="text-gray-600 mb-2">
-            Your {selectedGifts.length > 1 ? 'gifts have' : 'gift has'} been sent to {recipientProfile?.name || name}.
+            Your {selectedGifts.length > 1 ? 'gifts have' : 'gift has'} been sent to {recipientProfile?.name || idOrName}.
           </p>
           <p className="text-sm text-gray-500 mb-6">
             They will be notified immediately and can see your gift on their profile.
           </p>
           <div className="space-y-3">
             <Link
-              to={`/ladies/pro/${name?.toLowerCase()}`}
+              to={`/ladies/pro/${recipientProfile?.user_id ? '' : ''}${idOrName}`}
               className="block w-full bg-pink-500 text-white px-6 py-3 rounded-lg hover:bg-pink-600 transition-colors font-medium"
             >
               Return to Profile
@@ -227,7 +242,7 @@ export default function SendGift() {
       <div className="bg-white rounded-xl p-6 shadow-lg">
         <div className="mb-6">
           <Link
-            to={`/ladies/pro/${name?.toLowerCase()}`}
+            to={`/ladies/pro/${idOrName}`}
             className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 group"
           >
             <ArrowLeft className="h-5 w-5 transform group-hover:-translate-x-1 transition-transform" />
@@ -239,12 +254,12 @@ export default function SendGift() {
           <div className="flex items-center gap-4">
             <img
               src={recipientProfile?.image_url || "https://images.unsplash.com/photo-1516726817505-f5ed825624d8?auto=format&fit=crop&w=150&q=80"}
-              alt={recipientProfile?.name || name}
+              alt={recipientProfile?.name || idOrName}
               className="w-16 h-16 rounded-full object-cover ring-4 ring-pink-100"
             />
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                Send a Gift to <Link to={`/ladies/pro/${name?.toLowerCase()}`} className="text-pink-500">{recipientProfile?.name || name}</Link>
+                Send a Gift to <Link to={`/ladies/pro/${idOrName}`} className="text-pink-500">{recipientProfile?.name || idOrName}</Link>
               </h1>
             </div>
           </div>

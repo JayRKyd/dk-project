@@ -237,8 +237,8 @@ function AdvertisementPro() {
                     <Camera className="h-5 w-5" />
                   </span>
                 </div>
-                <Link
-                  to={`/fan-posts/${(profileData.name || 'me').toLowerCase()}`}
+                  <Link
+                  to={`/fan-posts/${profileData.id}`}
                   className="bg-pink-500 text-white px-6 py-2 rounded-lg hover:bg-pink-600 transition-colors flex items-center gap-2"
                 >
                   Go to my Fan Posts
@@ -424,7 +424,7 @@ function AdvertisementPro() {
                     </button>
                   </div>
                   <Link
-                    to={`/send-gift/${encodeURIComponent(profileData.name || 'lady')}`}
+                    to={`/send-gift/${profileData.id}`}
                     className="block w-full bg-pink-500 text-white p-3 rounded-lg hover:bg-pink-600 transition-colors font-medium text-center"
                   >
                     Send Gift

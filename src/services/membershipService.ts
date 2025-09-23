@@ -2,7 +2,8 @@ import { supabase } from '../lib/supabase';
 
 export interface ClubMembership {
   id: string;
-  club_id: string;
+  user_id?: string; // actual schema uses user_id
+  club_id?: string; // keep optional for compatibility
   tier: 'BASIC' | 'PRO' | 'PREMIUM';
   status: 'active' | 'expired' | 'cancelled';
   start_date: string;
@@ -25,22 +26,28 @@ export interface MembershipProgress {
 export const membershipService = {
   // Get current membership for a club
   async getCurrentMembership(clubId: string): Promise<ClubMembership | null> {
+    // clubId here represents the clubs.id; we need the owning user_id
+    const { data: clubRow, error: clubErr } = await supabase
+      .from('clubs')
+      .select('user_id')
+      .eq('id', clubId)
+      .single();
+    if (clubErr) throw clubErr;
+
     const { data, error } = await supabase
       .from('club_memberships')
       .select('*')
-      .eq('club_id', clubId)
-      .eq('status', 'active')
+      .eq('user_id', clubRow.user_id)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      .limit(1);
     
     if (error) {
       if (error.code === 'PGRST116') {
-        return null; // No active membership found
+        return null;
       }
       throw error;
     }
-    return data;
+    return (data as any[])?.[0] || null;
   },
 
   // Get days remaining until membership expires

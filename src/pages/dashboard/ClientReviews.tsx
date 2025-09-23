@@ -347,7 +347,7 @@ export default function ClientReviews() {
                     />
                     <div>
                       <Link
-                        to={`/ladies/pro/${review.lady.name.toLowerCase()}`}
+                        to={`/ladies/pro/${review.lady.id}`}
                         className="font-medium text-gray-900 hover:text-pink-500"
                       >
                         {review.lady.name}

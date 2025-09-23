@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Heart, MessageCircle, Lock, Camera, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -159,8 +159,8 @@ export default function ClientFanPosts() {
                     className="w-12 h-12 rounded-full object-cover"
                   />
                   <div>
-                    <Link
-                      to={`/ladies/pro/${post.lady.name.toLowerCase()}`}
+                <Link
+                  to={`/ladies/pro/${post.lady.id}`}
                       className="font-medium text-gray-900 hover:text-pink-500 transition-colors"
                     >
                       {post.lady.name}
@@ -216,7 +216,7 @@ export default function ClientFanPosts() {
                   Unlocked {formatDate(post.unlockedAt)}
                 </span>
                 <Link
-                  to={`/ladies/pro/${post.lady.name.toLowerCase()}`}
+                  to={`/ladies/pro/${post.lady.id}`}
                   className="text-pink-500 hover:text-pink-600 text-sm font-medium transition-colors"
                 >
                   View Profile

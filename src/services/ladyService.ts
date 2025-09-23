@@ -275,5 +275,94 @@ export const ladyService = {
       console.error('Error in deleteReply:', error);
       throw error;
     }
+  },
+
+  /**
+   * Search ladies by name (ILIKE) and merge with user email/username.
+   * Returns disambiguators for UI listing (avatar, location, rating, age, languages, lastActive).
+   */
+  async searchLadies(query: string, limit: number = 10): Promise<Array<{
+    userId: string;
+    profileId?: string;
+    name?: string;
+    email?: string;
+    username?: string;
+    imageUrl?: string;
+    location?: string;
+    rating?: number;
+    age?: number;
+    languages?: string[];
+    lastActive?: string;
+  }>> {
+    try {
+      const search = (query || '').trim();
+      if (!search) return [];
+
+      // 1) Search users (email/username) who are ladies
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('id, email, username, role')
+        .or(`email.ilike.%${search}%,username.ilike.%${search}%`)
+        .eq('role', 'lady')
+        .limit(limit);
+      if (usersError) throw usersError;
+
+      // 2) Search profiles by name (case-insensitive, supports duplicates)
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, user_id, name, image_url, location, rating, updated_at')
+        .ilike('name', `%${search}%`)
+        .limit(limit);
+      if (profilesError) throw profilesError;
+
+      const resultByUserId = new Map<string, any>();
+
+      // Seed with users
+      (usersData || []).forEach((u: any) => {
+        resultByUserId.set(u.id, {
+          userId: u.id,
+          email: u.email,
+          username: u.username
+        });
+      });
+
+      // Attach profiles; also collect profileIds for details fetch
+      const profileIds: string[] = [];
+      (profilesData || []).forEach((p: any) => {
+        profileIds.push(p.id);
+        const existing = resultByUserId.get(p.user_id) || { userId: p.user_id };
+        resultByUserId.set(p.user_id, {
+          ...existing,
+          profileId: p.id,
+          name: p.name,
+          imageUrl: p.image_url,
+          location: p.location,
+          rating: typeof p.rating === 'number' ? p.rating : undefined,
+          lastActive: p.updated_at
+        });
+      });
+
+      // 3) Fetch profile details for age/languages, if any profiles found
+      if (profileIds.length > 0) {
+        const { data: detailsData } = await supabase
+          .from('profile_details')
+          .select('profile_id, age, languages')
+          .in('profile_id', profileIds);
+
+        (detailsData || []).forEach((d: any) => {
+          // Find owning user by profileId
+          const entry = Array.from(resultByUserId.values()).find((r: any) => r.profileId === d.profile_id);
+          if (entry) {
+            entry.age = typeof d.age === 'number' ? d.age : undefined;
+            entry.languages = Array.isArray(d.languages) ? d.languages : undefined;
+          }
+        });
+      }
+
+      return Array.from(resultByUserId.values());
+    } catch (error) {
+      console.error('Error in searchLadies:', error);
+      return [];
+    }
   }
 }; 

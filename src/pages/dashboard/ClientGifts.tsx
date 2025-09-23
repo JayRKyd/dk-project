@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Heart, Gift, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { clientDashboardService, type Gift as GiftType } from '../../services/clientDashboardService';
+// import { clientDashboardService } from '../../services/clientDashboardService';
 import { giftService, type GiftWithReplies } from '../../services/giftService';
 
 export default function ClientGifts() {
@@ -163,7 +163,7 @@ export default function ClientGifts() {
                 />
                 <div>
                   <Link
-                    to={`/ladies/pro/${gift.recipient.name.toLowerCase()}`}
+                    to={`/ladies/pro/${gift.recipientProfileId || ''}`}
                     className="font-medium text-gray-900 hover:text-pink-500"
                   >
                     {gift.recipient.name}
@@ -192,7 +192,7 @@ export default function ClientGifts() {
             {/* Replies */}
             {gift.replies && gift.replies.length > 0 && (
               <div className="px-6 pb-6">
-                {gift.replies.map((reply, index) => (
+                {gift.replies.map((reply) => (
                   <div key={reply.id} className="bg-pink-50 rounded-lg p-4 mb-3">
                     <div className="flex items-center gap-2 mb-2">
                       <Heart className="h-4 w-4 text-pink-500" />
@@ -207,13 +207,13 @@ export default function ClientGifts() {
             {/* Actions */}
             <div className="px-6 py-4 bg-gray-50 flex justify-end gap-4">
               <Link
-                to={`/send-gift/${gift.recipient.name}`}
+                to={`/send-gift/${gift.recipientProfileId || ''}`}
                 className="text-pink-500 hover:text-pink-600 font-medium"
               >
                 Send Another Gift
               </Link>
               <Link
-                to={`/ladies/pro/${gift.recipient.name.toLowerCase()}`}
+                to={`/ladies/pro/${gift.recipientProfileId || ''}`}
                 className="text-gray-600 hover:text-gray-900"
               >
                 View Profile

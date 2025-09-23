@@ -288,9 +288,9 @@ export default function FanPosts() {
   const [expandedComments, setExpandedComments] = useState<string[]>([]);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
-  const { name } = useParams();
+  const { name: idOrName } = useParams();
   const [posts, setPosts] = useState<FanPost[]>([]);
-  const [author, setAuthor] = useState<{ authorName: string; authorImage: string } | null>(null);
+  const [author, setAuthor] = useState<{ authorName: string; authorImage: string; profileId?: string } | null>(null);
   const [sortBy, setSortBy] = useState<'newest' | 'liked'>('newest');
   const [page, setPage] = useState(1);
   const pageSize = 10;
@@ -301,15 +301,16 @@ export default function FanPosts() {
       try {
         // If viewing a particular author by name, try to resolve their profile
         let authorUserId: string | null = null;
-        if (name) {
+        if (idOrName) {
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName);
           const { data: profile } = await supabase
             .from('profiles')
-            .select('user_id, name, image_url')
-            .ilike('name', name)
+            .select('id, user_id, name, image_url')
+            [isUuid ? 'eq' : 'ilike'](isUuid ? 'id' : 'name', idOrName)
             .maybeSingle();
           if (profile) {
             authorUserId = profile.user_id;
-            setAuthor({ authorName: profile.name, authorImage: profile.image_url || '' });
+            setAuthor({ authorName: profile.name, authorImage: profile.image_url || '', profileId: profile.id });
           }
         }
         // Fetch posts
@@ -369,12 +370,12 @@ export default function FanPosts() {
       }
     };
     load();
-  }, [name]);
+  }, [idOrName]);
 
   // Filter posts by author name if provided
   const filteredPosts = useMemo(() => {
     const base = name 
-      ? posts.filter(post => post.authorName.toLowerCase() === (author?.authorName || name).toLowerCase()) 
+      ? posts.filter(post => post.authorName.toLowerCase() === (author?.authorName || idOrName || '').toLowerCase()) 
       : posts;
     const sorted = [...base].sort((a, b) => {
       if (sortBy === 'liked') {
@@ -393,7 +394,7 @@ export default function FanPosts() {
   }, [posts, name, author, sortBy, page]);
 
   // Get author info if viewing specific author's posts
-  const resolvedAuthor = author || (name ? { authorName: name, authorImage: '' } : null);
+  const resolvedAuthor = author || (idOrName ? { authorName: idOrName, authorImage: '' } : null);
 
   const handleUnlock = (post: FanPost) => {
     setSelectedPost(post);
@@ -447,7 +448,7 @@ export default function FanPosts() {
             <p className="text-gray-600">Subscribe to see all exclusive content</p>
           </div>
           <Link
-            to={`/ladies/${resolvedAuthor.authorName.toLowerCase()}`}
+            to={`/ladies/${author?.profileId || resolvedAuthor.authorName.toLowerCase()}`}
             className="w-full sm:w-auto bg-pink-500 hover:bg-pink-600 transition-colors text-white px-4 py-2 rounded-lg text-center mt-4 sm:mt-0"
           >
             Subscribe to {resolvedAuthor.authorName}
@@ -474,7 +475,7 @@ export default function FanPosts() {
                 <div>
                   <div className="flex items-center gap-2">
                     <Link
-                      to={`/ladies/${post.authorName.toLowerCase()}`}
+                      to={`/ladies/${author?.profileId || post.authorName.toLowerCase()}`}
                      className={`font-medium hover:text-pink-600 transition-colors ${
                        post.authorName === 'Melissa' ? 'text-pink-500' : 'text-gray-900'
                      }`}
@@ -496,7 +497,7 @@ export default function FanPosts() {
                    <span>Unlock</span>
                   </button>
                   <Link
-                    to={`/ladies/${post.authorName.toLowerCase()}`}
+                    to={`/ladies/${author?.profileId || post.authorName.toLowerCase()}`}
                     className="bg-pink-500 hover:bg-pink-600 transition-colors text-white px-3 py-1 rounded-full text-sm"
                   >
                     Subscribe to {post.authorName}
@@ -508,7 +509,7 @@ export default function FanPosts() {
                     Free
                   </span>
                  <Link
-                   to={`/ladies/${post.authorName.toLowerCase()}`}
+                   to={`/ladies/${author?.profileId || post.authorName.toLowerCase()}`}
                     className="bg-pink-500 hover:bg-pink-600 transition-colors text-white px-3 py-1 rounded-full text-sm text-center"
                  >
                    Subscribe to {post.authorName}

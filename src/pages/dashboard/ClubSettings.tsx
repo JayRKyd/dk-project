@@ -17,6 +17,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { useClubDashboard } from '../../hooks/useClubDashboard';
+import { useAuth } from '../../contexts/AuthContext';
 import { clubSettingsService, ClubPhoto, ClubFacility, ClubHours, ClubService } from '../../services/clubSettingsService';
 import { supabase } from '../../lib/supabase';
 import { uploadImage, uploadMultipleImages } from '../../services/imageService';
@@ -89,6 +90,7 @@ type TabId = typeof tabs[number]['id'];
 
 export default function ClubSettings() {
   const { clubProfile, loading, actions } = useClubDashboard();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>('info');
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -542,6 +544,15 @@ export default function ClubSettings() {
                       type="url"
                       value={formData.website}
                       onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        if (!raw) return;
+                        // If no scheme provided, prepend https://
+                        if (!/^https?:\/\//i.test(raw)) {
+                          const normalized = `https://${raw}`;
+                          setFormData(prev => ({ ...prev, website: normalized }));
+                        }
+                      }}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       placeholder="https://yourclub.com (optional)"
                     />
@@ -672,7 +683,9 @@ export default function ClubSettings() {
                                   setIsUploadingPhoto(true);
                                   setPhotoMessage({text: 'Uploading logo...', type: 'info'});
                                   const file = e.target.files[0];
-                                  const { url } = await uploadImage(file, 'profile-pictures', '', clubProfile.id);
+                                  const ownerId = user?.id || clubProfile.id;
+                                  const folder = `club/${clubProfile.id}/logo`;
+                                  const { url } = await uploadImage(file, 'profile-pictures', folder, ownerId);
                                   setFormData(prev => ({ ...prev, logoUrl: url }));
                                   await actions.updateClubProfile({ logo_url: url });
                                   setPhotoMessage({text: 'Logo updated successfully!', type: 'success'});
@@ -743,7 +756,9 @@ export default function ClubSettings() {
                                   setIsUploadingPhoto(true);
                                   setPhotoMessage({text: 'Uploading cover photo...', type: 'info'});
                                   const file = e.target.files[0];
-                                  const { url } = await uploadImage(file, 'profile-pictures', '', clubProfile.id);
+                                  const ownerId = user?.id || clubProfile.id;
+                                  const folder = `club/${clubProfile.id}/cover`;
+                                  const { url } = await uploadImage(file, 'profile-pictures', folder, ownerId);
                                   setFormData(prev => ({ ...prev, coverPhotoUrl: url }));
                                   await actions.updateClubProfile({ cover_photo_url: url });
                                   setPhotoMessage({text: 'Cover photo updated successfully!', type: 'success'});
@@ -845,22 +860,25 @@ export default function ClubSettings() {
                         onChange={async (e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (!clubProfile?.id || !e.target.files || e.target.files.length === 0) return;
+                          const inputEl = e.currentTarget as HTMLInputElement;
+                          if (!clubProfile?.id || !inputEl.files || inputEl.files.length === 0) return;
                           try {
                             setIsUploadingPhoto(true);
                             setPhotoMessage({text: 'Uploading gallery photos...', type: 'info'});
-                            const files = Array.from(e.target.files);
+                            const files = Array.from(inputEl.files);
                             if (galleryImages.length + files.length > 6) {
                               throw new Error(`You can only have up to 6 gallery photos. You can add ${6 - galleryImages.length} more.`);
                             }
-                            const uploadedImages = await uploadMultipleImages(files, 'gallery-images', clubProfile.id, clubProfile.id);
+                            const ownerId = user?.id || clubProfile.id;
+                            const folder = `club/${clubProfile.id}`;
+                            const uploadedImages = await uploadMultipleImages(files, 'gallery-image', folder, ownerId);
                             try {
                               const { ContentModerationService } = await import('../../services/contentModerationService');
                               await ContentModerationService.recordUploadedImages(clubProfile.id, uploadedImages);
                             } catch (recErr) {
                               console.warn('Failed to record uploaded images for moderation:', recErr);
                             }
-                            e.currentTarget.value = '';
+                            inputEl.value = '';
                             const newUrls = uploadedImages.map(img => `${img.url}?t=${Date.now()}`);
                             setGalleryImages(prev => [...prev, ...newUrls]);
                             setPhotoMessage({text: 'Gallery photos uploaded successfully!', type: 'success'});
