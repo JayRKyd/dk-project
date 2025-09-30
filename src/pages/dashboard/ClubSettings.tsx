@@ -718,7 +718,9 @@ export default function ClubSettings() {
                               setIsUploadingPhoto(true);
                               setPhotoMessage({text: 'Uploading logo...', type: 'info'});
                               const file = e.target.files[0];
-                              const { url } = await uploadImage(file, 'profile-pictures', '', clubProfile.id);
+                              const ownerId = user?.id || clubProfile.id;
+                              const folder = `club/${clubProfile.id}/logo`;
+                              const { url } = await uploadImage(file, 'profile-pictures', folder, ownerId);
                               setFormData(prev => ({ ...prev, logoUrl: url }));
                               await actions.updateClubProfile({ logo_url: url });
                               setPhotoMessage({text: 'Logo updated successfully!', type: 'success'});
@@ -791,7 +793,9 @@ export default function ClubSettings() {
                               setIsUploadingPhoto(true);
                               setPhotoMessage({text: 'Uploading cover photo...', type: 'info'});
                               const file = e.target.files[0];
-                              const { url } = await uploadImage(file, 'profile-pictures', '', clubProfile.id);
+                              const ownerId = user?.id || clubProfile.id;
+                              const folder = `club/${clubProfile.id}/cover`;
+                              const { url } = await uploadImage(file, 'profile-pictures', folder, ownerId);
                               setFormData(prev => ({ ...prev, coverPhotoUrl: url }));
                               await actions.updateClubProfile({ cover_photo_url: url });
                               setPhotoMessage({text: 'Cover photo updated successfully!', type: 'success'});

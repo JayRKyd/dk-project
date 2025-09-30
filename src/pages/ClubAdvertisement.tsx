@@ -23,6 +23,8 @@ export default function ClubAdvertisement() {
   const [city, setCity] = useState<string>('');
   const [address, setAddress] = useState<string>('');
   const [gallery, setGallery] = useState<string[]>([]);
+  const [coverPhotoUrl, setCoverPhotoUrl] = useState<string>('');
+  const [ownerUserId, setOwnerUserId] = useState<string>('');
   const [verified, setVerified] = useState<boolean>(false);
   const [rating, setRating] = useState<number>(0);
   const [loves, setLoves] = useState<number>(0);
@@ -38,6 +40,7 @@ export default function ClubAdvertisement() {
 	const [lastOnline, setLastOnline] = useState<string>('');
 	const [clubVisitEnabled, setClubVisitEnabled] = useState<boolean>(false);
 	const [escortVisitEnabled, setEscortVisitEnabled] = useState<boolean>(false);
+  const [promotions, setPromotions] = useState<any[]>([]);
 
 	useEffect(() => {
     const load = async () => {
@@ -71,6 +74,8 @@ export default function ClubAdvertisement() {
           setPhone((club as any).phone || '');
           setClubVisitEnabled((club as any).club_visit_enabled || false);
           setEscortVisitEnabled((club as any).escort_visit_enabled || false);
+          if ((club as any).cover_photo_url) setCoverPhotoUrl((club as any).cover_photo_url);
+          if ((club as any).user_id) setOwnerUserId((club as any).user_id);
 					if ((club as any).created_at) {
 						setMemberSince(new Date((club as any).created_at).toLocaleDateString());
 					}
@@ -84,11 +89,22 @@ export default function ClubAdvertisement() {
 						if (clubUser?.last_sign_in_at) setLastOnline(new Date(clubUser.last_sign_in_at).toLocaleDateString());
 					}
         }
-        // Load gallery images from storage
-        const { data } = await supabase.storage.from('gallery-images').list(id, { sortBy: { column: 'name', order: 'asc' } });
-        if (data && data.length > 0) {
-          const urls = data.map(f => supabase.storage.from('gallery-images').getPublicUrl(`${id}/${f.name}`).data.publicUrl);
-          setGallery(urls);
+        // Load gallery images from storage (correct bucket and path)
+        try {
+          const listPath = ownerUserId ? `${ownerUserId}/club/${id}` : `${id}`;
+          const { data } = await supabase.storage
+            .from('gallery-image')
+            .list(listPath, { sortBy: { column: 'name', order: 'asc' } });
+          if (data && data.length > 0) {
+            const urls = data.map(f =>
+              supabase.storage
+                .from('gallery-image')
+                .getPublicUrl(`${listPath}/${f.name}`).data.publicUrl
+            );
+            setGallery(urls);
+          }
+        } catch (_) {
+          // If listing is blocked by RLS, we silently fall back to cover photo
         }
         // Load club ladies
         try {
@@ -101,6 +117,11 @@ export default function ClubAdvertisement() {
               imageUrl: cl.profile?.image_url,
             }));
           setLadiesList(mapped);
+        } catch (_) {}
+        // Promotions (publicly visible active promos)
+        try {
+          const promos = await clubSettingsService.getClubPromotions(id);
+          setPromotions(promos || []);
         } catch (_) {}
         // Facilities
         try {
@@ -139,7 +160,7 @@ export default function ClubAdvertisement() {
     })();
   }, [id, user ? user.id : undefined]);
 
-	const images = useMemo(() => gallery, [gallery]);
+  const images = useMemo(() => (gallery.length > 0 ? gallery : (coverPhotoUrl ? [coverPhotoUrl] : [])), [gallery, coverPhotoUrl]);
 
   const openFullscreen = (index: number) => {
     setFullscreenImage(index);
@@ -187,12 +208,16 @@ export default function ClubAdvertisement() {
       <div className="relative bg-gray-900">
         {/* Photo Bar */}
         {images.length === 0 ? (
-          <div className="h-[320px] flex items-center justify-center text-gray-300">
-            No images uploaded yet.
+          <div className="h-[320px] flex items-center justify-center text-gray-300">No images uploaded yet.</div>
+        ) : images.length === 1 ? (
+          <div className="h-[320px] md:h-[480px]">
+            <img src={images[0]} alt="Club cover" className="w-full h-full object-cover" />
           </div>
         ) : (
-          <div className="flex h-[600px] transition-transform duration-300 ease-in-out"
-               style={{ transform: `translateX(-${selectedImage * 25}%)` }}>
+          <div
+            className="flex h-[600px] transition-transform duration-300 ease-in-out"
+            style={{ transform: `translateX(-${selectedImage * 25}%)` }}
+          >
             {images.map((image, index) => (
               <div key={index} className="flex-none w-1/4 relative">
                 <img
@@ -312,6 +337,37 @@ export default function ClubAdvertisement() {
                       </div>
                       <div className="text-center">
                         <h3 className="font-medium text-gray-900">{lady.name}</h3>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Promotions */}
+            <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
+              <h2 className="text-2xl font-bold mb-4">Promotions</h2>
+              {promotions.length === 0 ? (
+                <p className="text-gray-600">No active promotions right now.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {promotions.map((p) => (
+                    <div key={p.id} className="border rounded-lg overflow-hidden">
+                      {p.image_url && (
+                        <img src={p.image_url} alt={p.title} className="w-full h-48 object-cover" />
+                      )}
+                      <div className="p-4 space-y-2">
+                        <div className="text-pink-600 text-sm font-medium uppercase">{p.promo_type}</div>
+                        <h3 className="text-lg font-semibold">{p.title}</h3>
+                        <p className="text-gray-700 text-sm">{p.description}</p>
+                        <div className="text-gray-600 text-sm">
+                          {p.start_date} – {p.end_date}
+                        </div>
+                        {p.discount_percentage ? (
+                          <div className="text-green-600 font-semibold">-{p.discount_percentage}%</div>
+                        ) : p.fixed_price ? (
+                          <div className="text-green-600 font-semibold">€ {p.fixed_price}</div>
+                        ) : null}
                       </div>
                     </div>
                   ))}

@@ -71,6 +71,7 @@ import ClubBump from './pages/dashboard/ClubBump';
 import ClubUpgrade from './pages/dashboard/ClubUpgrade';
 import ClubReviews from './pages/dashboard/ClubReviews';
 import ClubSettings from './pages/dashboard/ClubSettings';
+import ClubAnalytics from './pages/dashboard/ClubAnalytics';
 import ClubVerification from './pages/ClubVerification';
 import ClubLady from './pages/dashboard/ClubLady';
 import UpgradeMembership from './pages/dashboard/UpgradeMembership';
@@ -329,6 +330,13 @@ function AppRoutes() {
         <ProtectedRoute requiredRole="club">
           <ClubVerificationGuard>
             <ClubReviews />
+          </ClubVerificationGuard>
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard/club/analytics" element={
+        <ProtectedRoute requiredRole="club">
+          <ClubVerificationGuard>
+            <ClubAnalytics />
           </ClubVerificationGuard>
         </ProtectedRoute>
       } />
